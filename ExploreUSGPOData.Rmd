@@ -1,0 +1,140 @@
+---
+title: "How long does it take policy to be made?"
+output: html_notebook
+---
+
+I want to collect congressional data to see if I can identify how long bills take to become law.
+It will also be interesting to see what proportion of proposed bills become law.
+
+```{r setup}
+library(tidyverse)
+library(rjson)
+library(jsonlite)
+library(RCurl)
+library(lubridate)
+library(tidyjson)
+
+apiGovKey = getOption("apiGovKey")
+
+```
+
+[US General Publishing Office API documentation on github](https://github.com/usgpo/api)
+
+API call format:
+
+https:// api.govinfo.gov/published/`dateIssuedStartDate`/`dateIssuedEndDate`?offset=`startingRecord`&pageSize=`number of records in call`&collection=`comma-separated list of values`&api_key=`your api.data.gov api key`
+
+Available collections:
+
+```{r}
+collection_url = URLencode(paste0("https://api.govinfo.gov/collections?api_key=", apiGovKey))
+
+collections = flatten_dfc(fromJSON(collection_url))
+
+collections
+```
+
+
+- Congressional Bills
+- Congressional Bill Status
+
+```{r}
+
+getPublished = function(dateIssuedStartDate, dateIssuedEndDate,
+                       startingRecord = 0, numRecords = 20,
+                       collections){
+  if(missing(dateIssuedEndDate)){
+    end_date = ""
+    } else {
+      end_date = paste0("/", format(dateIssuedEndDate, "%Y-%m-%dT%H:%M:%SZ"))
+    }
+  
+  url = paste0("https://api.govinfo.gov/published/",
+         format(dateIssuedStartDate, "%Y-%m-%dT%H:%M:%SZ"), end_date,
+         "?offset=", startingRecord, "&pageSize=",
+         numRecords, "&collection=",
+         collections,
+         "&api_key=", apiGovKey
+         )
+  # encode the URL with characters for each space.
+  full_url <- URLencode(url)
+  fromJSON(full_url)
+}
+
+getPackages = function(packageId, summary = F, granules = F){
+  summary_url = paste0("https://api.govinfo.gov/packages/", packageId, 
+               "/summary",
+               "?api_key=", apiGovKey)
+  # encode the URL with characters for each space.
+  summary_json = fromJSON(URLencode(summary_url))
+  if(summary){
+    return(summary_json)
+  }
+  package_summary = flatten_dfc(summary_json)
+  
+  if(!("granulesLink" %in% colnames(package_summary))){
+    stop("No `granulesLink` element")
+  }
+  granules_url = paste0(package_summary$granulesLink, "&api_key=", apiGovKey)
+  
+  granules = fromJSON(URLencode(granules_url))
+  browser()
+  granules_list = map(granules$granules$granuleLink, 
+      ~fromJSON(URLencode(paste0(., "?api_key=", apiGovKey))))
+  
+  # Flatten lists where elements are singular (i.e. not lists)
+  granules_flattened = granules_list %>% 
+    map_dfr(discard, is_list)
+  
+  granules_tables = granules_list %>% 
+    map(keep, is_list)
+
+  granules_flattened %>% 
+    mutate(download = map(granules_tables, "download"),
+           committees = map(granules_tables, "committees"),
+           members = map(granules_tables, "members"),
+           references = map(granules_tables, "references")) %>% 
+    unnest(committees, keep_empty = T, names_sep = "_") %>% 
+    unnest(references, keep_empty = T, names_sep = "_") %>% 
+    unnest(references_contents, keep_empty=T, names_sep = "_")
+}
+
+```
+
+History of bills
+
+```{r}
+# History of bills modified since November 1st 2021
+hob_nov2021 = getPublished(dateIssuedStartDate = ymd("2021-11-01"),
+                           collections = "HOB")
+
+hob_nov2021[["packages"]]
+```
+
+Get package summary data
+
+```{r}
+getPackages(hob_nov2021[["packages"]][["packageId"]], summary=T) %>% flatten_dfc()
+```
+
+Get package granules data
+
+```{r}
+hob2021 = getPackages(hob_nov2021[["packages"]][["packageId"]], granules=T)
+
+hob2021
+```
+
+```{r}
+hob2021$committees[1:2]
+  map("contents") %>% 
+  flatten_dfr()
+```
+
+
+
+# Resources
+
+- https://www.earthdatascience.org/courses/earth-analytics/get-data-using-apis/API-data-access-r/
+- https://stackoverflow.com/questions/43843204/r-error-when-using-geturl-from-curl-after-site-was-changed
+- https://robotwealth.com/how-to-wrangle-json-data-in-r-with-jsonlite-purr-and-dplyr/
