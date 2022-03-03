@@ -34,102 +34,495 @@ collection_url = URLencode(paste0("https://api.govinfo.gov/collections?api_key="
 
 collections = flatten_dfc(fromJSON(collection_url))
 
-collections
+glimpse(collections)
 ```
+# Published
 
+>This is similar to the collections service in that it provides users with an easy way to get a list of packages by date. The difference is that this service provides packages based on dateIssued -- this generally corresponds to the publication date of the content itself, rather than the govinfo system update time for a publication.
 
 - Congressional Bills
 - Congressional Bill Status
 
+
+
+## Bill Status
+
+Get a list of packages from the **Bill Status** collection which were issued in 2021.
+
 ```{r}
 
-getPublished = function(dateIssuedStartDate, dateIssuedEndDate,
-                       startingRecord = 0, numRecords = 20,
-                       collections){
-  if(missing(dateIssuedEndDate)){
-    end_date = ""
-    } else {
-      end_date = paste0("/", format(dateIssuedEndDate, "%Y-%m-%dT%H:%M:%SZ"))
-    }
-  
-  url = paste0("https://api.govinfo.gov/published/",
-         format(dateIssuedStartDate, "%Y-%m-%dT%H:%M:%SZ"), end_date,
-         "?offset=", startingRecord, "&pageSize=",
-         numRecords, "&collection=",
-         collections,
-         "&api_key=", apiGovKey
-         )
-  # encode the URL with characters for each space.
-  full_url <- URLencode(url)
-  fromJSON(full_url)
-}
+bill_status = getPublished(dateIssuedStartDate = ymd("2021-01-01"),
+                           dateIssuedEndDate = ymd("2022-01-01"),
+                           numRecords = 100,
+                           collections = "BILLSTATUS")
+glimpse(bill_status)
+```
 
-getPackages = function(packageId, summary = F, granules = F){
-  summary_url = paste0("https://api.govinfo.gov/packages/", packageId, 
-               "/summary",
-               "?api_key=", apiGovKey)
-  # encode the URL with characters for each space.
-  summary_json = fromJSON(URLencode(summary_url))
-  if(summary){
-    return(summary_json)
-  }
-  package_summary = flatten_dfc(summary_json)
-  
-  if(!("granulesLink" %in% colnames(package_summary))){
-    stop("No `granulesLink` element")
-  }
-  granules_url = paste0(package_summary$granulesLink, "&api_key=", apiGovKey)
-  
-  granules = fromJSON(URLencode(granules_url))
-  browser()
-  granules_list = map(granules$granules$granuleLink, 
-      ~fromJSON(URLencode(paste0(., "?api_key=", apiGovKey))))
-  
-  # Flatten lists where elements are singular (i.e. not lists)
-  granules_flattened = granules_list %>% 
-    map_dfr(discard, is_list)
-  
-  granules_tables = granules_list %>% 
-    map(keep, is_list)
+The return object is a list with a count of records, the API query for the next page, and a dataframe of packages. 
+This dataframe contains:
+- the package ID
+- when it was issued and last modified
+- the API query for the package
+- the bill type
+- the congress number
 
-  granules_flattened %>% 
-    mutate(download = map(granules_tables, "download"),
-           committees = map(granules_tables, "committees"),
-           members = map(granules_tables, "members"),
-           references = map(granules_tables, "references")) %>% 
-    unnest(committees, keep_empty = T, names_sep = "_") %>% 
-    unnest(references, keep_empty = T, names_sep = "_") %>% 
-    unnest(references_contents, keep_empty=T, names_sep = "_")
-}
+```{r}
+glimpse(bill_status$packages)
+```
+Let's take a sample package and see what information we can get with that.
+
+```{r}
+sample_package = sample_n(bill_status$packages$packageId, 1)
+
+sample_package
+```
+
+# Packages Service
+
+>This service allows you to specify a govinfo `packageId` and retrieve available forms of content and metadata. A `/summary` json response is available that includes links and basic metadata about the package - generally equivalent to the information available on the details page for that package.
+>
+>From the summary, you can get access to all available content and metadata formats for a package.
+
+
+
+```{r}
+sample_package_summary = getPackages(packageId = sample_package$packageId, 
+                                     summary = T) %>% 
+  # If I want to create list column for download links
+  # map_if(is_list, as_tibble) %>%
+  # as_tibble()
+  flatten_dfc()
+
+sample_package_summary
 
 ```
 
-History of bills
+
+Now what can we get in the package's XML data
+
+```{r}
+(sample_xml = read_xml(sample_package_summary$xmlLink))
+
+sample_xml_doc = xmlTreeParse(sample_xml, useInternalNodes = T)
+top = xmlRoot(sample_xml_doc)
+
+```
+
+
+
+```{r}
+sample_xml %>% 
+  xml_child("bill")
+```
+
+
+
+```{r}
+xml_find_all(sample_xml, "bill")
+```
+
+
+## What's in the XML?
+
+```{r}
+(sample_bill = xml_child(sample_xml, "bill"))
+```
+So what will we want:
+
+- billNumber
+- createDate
+- updateDate
+- originChamber
+- billType
+- introducedDate
+- congress
+- recordedVotes
+- committees
+- committeeReports
+- actions
+- sponsors
+- cosponsors
+
+What happens with xmlToDataFrame?
+
+```{r}
+(sample_df = xmlToDataFrame(sample_xml_doc, nodes = getNodeSet(sample_xml_doc, "//bill")) %>% 
+   select(billNumber, title, createDate:congress, policyArea)) %>% glimpse()
+```
+
+```{r}
+sample_df$title
+```
+
+
+From this we can extract all of the attributes which only have a single value
+
+```{r}
+(xpaths = sample_bill %>% xml_children() %>% 
+  map_chr(xml_path))
+```
+
+```{r}
+(bill_nodesets = map(xpaths, ~ xml_find_all(sample_bill, xpath = .x)) %>% 
+  set_names(map_chr(., xml_name)))
+```
+Some nodesets have multiple attributes so we'll need to work through those first
+
+```{r}
+
+(nested_attributes = bill_nodesets %>% 
+  discard(~(xml_length(.) == 0)))
+
+```
+
+### Committees
+
+```{r}
+# List of bill committees
+(bill_committees = nested_attributes[["committees"]] %>% 
+  xml_find_all("billCommittees/item"))
+```
+
+```{r}
+bill_committees %>% 
+  xml_structure()
+```
+
+```{r}
+committees_list = bill_committees %>% 
+  # retrieve each committee's xpath
+  map_chr(xml_path) %>% 
+  # Find the nodes based on each xpath
+  map(~xml_find_all(sample_bill, .x)) %>% 
+  # Coerce nodes to list
+  map(as_list)
+
+str(committees_list)
+```
+Because the list of committees is pretty deeply nested, we use `map_depth` and for each committee we use `modify_at` and `flatten_chr` to flatten out the list. 
+For attributes which can have multiple values e.g. activities or subcommittees, we map over those and perform a similar procedure.
+In each case we rename the variables according to their category and whittle them down to a dataframe.
+
+```{r}
+committees_dfs = committees_list %>% 
+  map_depth(2, function(committee){
+    committee %>% 
+      modify_at("name", flatten_chr) %>% 
+      modify_at("systemCode", flatten_chr) %>% 
+      modify_at("chamber", flatten_chr) %>% 
+      modify_at("type", flatten_chr) %>% 
+      modify_at("activities", map, ~rename_with(flatten_dfc(.x), ~str_c("activity_", .))) %>% 
+      modify_at("subcommittees", function(subcommittee){
+          modify(subcommittee, function(item){
+              modify_at(item, "systemCode", flatten_chr) %>% 
+                  modify_at("name", flatten_chr) %>% 
+                  modify_at("activities", map, ~rename_with(flatten_dfc(.x), ~str_c("activity_", .)))
+          }) %>% 
+              map(~rename_with(flatten_dfc(.x), ~str_c("subcommittee_", .)))
+      }) %>% 
+      flatten_dfc() %>% 
+      rename_with(.fn = ~str_c("committee_", .), .cols = -starts_with("subcommittee")) %>% 
+      select(starts_with("committee"), starts_with("subcommittee"))
+  })
+  
+(committees_df = committees_dfs %>% 
+  flatten_dfr())
+
+```
+
+### Actions
+
+```{r}
+
+nested_attributes[["actions"]] %>% xml_path()
+# List of bill committees
+(bill_actions = nested_attributes[["actions"]] %>% 
+  xml_find_all("item"))
+```
+```{r}
+(actions_df = bill_actions %>% 
+  # Coerce nodes to list
+  map(as_list) %>% 
+  map_dfr(function(action){
+    action %>% 
+      modify_at("sourceSystem", ~rename_with(flatten_dfc(.x), ~str_c("sourceSystem_", .))) %>% 
+      modify_at("committees", function(committee){
+          modify(committee, function(item){
+              modify_at(item, "systemCode", flatten_chr) %>% 
+                  modify_at("name", flatten_chr)
+          }) %>% 
+              map(~rename_with(flatten_dfc(.x), ~str_c("committee_", .)))
+      }) %>% 
+      flatten_dfc() %>% 
+      rename_with(.fn = ~str_c("action_", .), .cols = -starts_with("action"))
+  }))
+```
+
+### Sponsors
+
+```{r}
+nested_attributes[["sponsors"]] %>% xml_path()
+# List of bill sponsors
+(bill_sponsors = nested_attributes[["sponsors"]] %>% 
+  xml_find_all("item"))
+```
+
+```{r}
+bill_sponsors %>% 
+  xml_structure()
+```
+
+```{r}
+(sponsors_df = bill_sponsors %>% 
+  # Coerce nodes to list
+  map(as_list) %>% 
+  map_dfr(function(action){
+    action %>% 
+      modify_at("identifiers", ~rename_with(flatten_dfc(.x), ~str_c("identifiers_", .))) %>% 
+      flatten_dfc() %>% 
+      rename_with(.fn = ~str_c("sponsor_", .), .cols = -starts_with("sponsor"))
+  }))
+```
+
+### Cosponsors
+
+```{r}
+nested_attributes[["cosponsors"]] %>% xml_path()
+# List of bill cosponsors
+(bill_cosponsors = nested_attributes[["cosponsors"]] %>% 
+  xml_find_all("item"))
+```
+
+```{r}
+bill_cosponsors %>% 
+  xml_structure()
+```
+
+```{r}
+(cosponsors_df = bill_cosponsors %>% 
+  # Coerce nodes to list
+  map(as_list) %>% 
+  map_dfr(function(cosponsor){
+    cosponsor %>% 
+      modify_at("identifiers", ~rename_with(flatten_dfc(.x), ~str_c("identifiers_", .))) %>% 
+      flatten_dfc() %>% 
+      rename_with(.fn = ~str_c("cosponsor_", .), .cols = -starts_with("cosponsor"))
+  }))
+```
+
+
+
+
+
+
+```{r}
+list(sample_df, committees_df, sponsors_df, actions_df)
+
+(bill_combined_df = sample_df %>% 
+  mutate(committees = list(committees_df), 
+         sponsors = list(sponsors_df),
+         actions = list(actions_df)))
+```
+
+## Putting this all together
+
+Using the bulk data from https://www.govinfo.gov/bulkdata/BILLSTATUS/117/hr, we can 
+
+
+```{r}
+library(here)
+hr117_files = list.files(here("data", "BILLSTATUS-117-hr"), full.names = T)
+
+(map_dfr(hr117_files[1:10], extract_bill_status) -> samples)
+```
+
+Using {furrr} has some benefits here
+
+```{r}
+tic("All hr117 files")
+hr117_df = future_map_dfr(hr117_files, extract_bill_status)
+toc()
+```
+
+
+OR using the API
+
+```{r}
+map(bill_status$packages$packageId, getPackages)
+```
+
+
+
+
+### History of Bills
 
 ```{r}
 # History of bills modified since November 1st 2021
-hob_nov2021 = getPublished(dateIssuedStartDate = ymd("2021-11-01"),
+hob_2021 = getPublished(dateIssuedStartDate = ymd("2021-01-01"),
+                           dateIssuedEndDate = ymd("2022-01-01"),
                            collections = "HOB")
 
-hob_nov2021[["packages"]]
+hob_2021[["packages"]]
 ```
+
+### Bill Status
+
+```{r}
+# History of bills modified since November 1st 2021
+bill_status_2021 = getPublished(dateIssuedStartDate = ymd("2021-01-01"),
+                           dateIssuedEndDate = ymd("2022-01-01"),
+                           collections = "BILLSTATUS")
+
+bill_status_2021[["packages"]]
+```
+
+Building the `getPackages` function
+
+Aim: Return the history of bills data in a structure which can be analyzed
+
+```{r}
+bill_status_2021_pid = bill_status_2021[["packages"]][["packageId"]]
+summary_url = paste0("https://api.govinfo.gov/packages/", bill_status_2021_pid, 
+               "/summary",
+               "?api_key=", apiGovKey)
+summary_url
+
+```
+
+```{r}
+# encode the URL with characters for each space.
+summary_json = fromJSON(URLencode(summary_url[1]))
+
+glimpse(summary_json)
+```
+
+```{r}
+package_summary = flatten_dfc(summary_json)
+
+glimpse(package_summary)
+
+```
+
+What is in the package MODS data?
+
+```{r}
+mods_url = URLencode(paste0(package_summary$xmlLink, "?api_key=", apiGovKey))
+
+```
+
+
+
+```{r}
+xml_contents(package_mods)
+```
+```{r}
+xml_children(package_mods) %>% glimpse()
+```
+
+
+```{r}
+granules_url = paste0(package_summary$granulesLink, "&api_key=", apiGovKey)
+
+granules_url_1000 = str_replace(granules_url, "pageSize=100", "pageSize=1000")
+granules_url_1000
+
+```
+
+```{r}
+granules = fromJSON(URLencode(granules_url))
+
+granules
+
+```
+
+```{r}
+granules_1000 = fromJSON(URLencode(granules_url_1000))
+
+granules_1000
+
+```
+
+
+```{r}
+granules_list = map(granules$granules$granuleLink, 
+    ~fromJSON(URLencode(paste0(., "?api_key=", apiGovKey))))
+
+granules_list[[7]][["download"]][["txtLink"]] %>% 
+  str_c(., "?api_key=", apiGovKey) %>% 
+  read_html()
+```
+
+```{r}
+granules_flattened = granules_list %>% 
+    map_dfr(discard, is_list)
+
+glimpse(granules_flattened)
+
+```
+```{r}
+granules_tables = granules_list %>% 
+    map(keep, is_list)
+
+glimpse(granules_tables[1:3])
+```
+```{r}
+granules_df = granules_flattened %>% 
+  mutate(download = map(granules_tables, "download"),
+         committees = map(granules_tables, "committees"),
+         members = map(granules_tables, "members"),
+         references = map(granules_tables, "references")) %>% 
+  unnest(committees, keep_empty = T, names_sep = "_") %>% 
+  unnest(references, keep_empty = T, names_sep = "_") %>% 
+  unnest(references_contents, keep_empty=T, names_sep = "_")
+
+glimpse(granules_df)
+```
+```{r}
+granules_df %>% 
+  add_count(granuleId) %>% 
+  filter(n>1)
+```
+
+Get XML from granules
+
+```{r}
+granules_xml_links = granules_list %>% 
+  map("download") %>% 
+  map_dfr(flatten_dfr) %>% 
+  head(1) %>% 
+  transmute(modsLink = str_c(modsLink, "?api_key=", apiGovKey)) %>% 
+  pull()
+
+granules_xml = granules_xml_links %>% 
+  map(read_xml)
+
+granules_result = granules_xml[[1]] %>% xmlParse()
+
+granules_result
+```
+```{r}
+as_list(granules_xml[[1]])
+```
+
+
 
 Get package summary data
 
 ```{r}
-getPackages(hob_nov2021[["packages"]][["packageId"]], summary=T) %>% flatten_dfc()
+getPackages(hob_2021[["packages"]][["packageId"]], summary=T) %>% 
+  flatten_dfc()
 ```
 
 Get package granules data
 
 ```{r}
-hob2021 = getPackages(hob_nov2021[["packages"]][["packageId"]], granules=T)
+hob_2021_granules = getPackages(hob_2021[["packages"]][["packageId"]], granules=T)
 
-hob2021
+hob_2021_granules
 ```
 
 ```{r}
-hob2021$committees[1:2]
+hob_2021_granules$committees[1:2]
   map("contents") %>% 
   flatten_dfr()
 ```
