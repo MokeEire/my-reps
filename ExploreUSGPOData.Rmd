@@ -13,6 +13,9 @@ library(jsonlite)
 library(RCurl)
 library(lubridate)
 library(tidyjson)
+library(XML)
+library(xml2)
+source("R/parsing_functions.R")
 
 apiGovKey = getOption("apiGovKey")
 
