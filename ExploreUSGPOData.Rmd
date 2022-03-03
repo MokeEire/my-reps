@@ -349,9 +349,58 @@ OR using the API
 
 ```{r}
 map(bill_status$packages$packageId, getPackages)
+
+```
+
+## Explore HR117
+
+```{r}
+glimpse(hr117_df)
+```
+
+One bill number per row?
+
+```{r}
+add_count(hr117_df, billNumber) %>% 
+  count(n)
 ```
 
 
+When are bills introduced?
+
+```{r}
+library(mokeR)
+
+hr117_df %>% 
+  count(introducedDate, wt = n_distinct(billNumber)) %>% 
+  group_by(week = week(introducedDate), year = year(introducedDate)) %>% 
+  mutate(bills_weekly = sum(n),
+         bill_week = mean(introducedDate)) %>% 
+  ggplot(., aes(x = bill_week, y = bills_weekly))+
+  geom_col()+
+  scale_x_date(expand = expansion())+
+  scale_y_continuous(expand = expansion())+
+  theme_mark(plots_pane = T)
+```
+
+```{r}
+hr117_df %>% 
+  rowwise() %>% 
+  mutate(first_action = min(actions$actionDate, na.rm=T)) %>% 
+  filter(first_action!=introducedDate) %>% 
+  pull(actions)
+```
+
+
+
+```{r}
+hr117_actions = hr117_df %>% 
+  select(billNumber, actions) %>% 
+  unnest(actions)
+
+hr117_actions%>% 
+  count(action_type)
+```
 
 
 ### History of Bills
