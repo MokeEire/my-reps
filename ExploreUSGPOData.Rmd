@@ -21,6 +21,8 @@ apiGovKey = getOption("apiGovKey")
 
 ```
 
+# GovInfo API
+
 [US General Publishing Office API documentation on github](https://github.com/usgpo/api)
 
 API call format:
@@ -36,7 +38,8 @@ collections = flatten_dfc(fromJSON(collection_url))
 
 glimpse(collections)
 ```
-# Published
+
+## Published
 
 >This is similar to the collections service in that it provides users with an easy way to get a list of packages by date. The difference is that this service provides packages based on dateIssued -- this generally corresponds to the publication date of the content itself, rather than the govinfo system update time for a publication.
 
@@ -45,7 +48,7 @@ glimpse(collections)
 
 
 
-## Bill Status
+### Bill Status
 
 Get a list of packages from the **Bill Status** collection which were issued in 2021.
 
@@ -72,12 +75,12 @@ glimpse(bill_status$packages)
 Let's take a sample package and see what information we can get with that.
 
 ```{r}
-sample_package = sample_n(bill_status$packages$packageId, 1)
+sample_package = sample_n(bill_status$packages, 1)
 
 sample_package
 ```
 
-# Packages Service
+## Packages Service
 
 >This service allows you to specify a govinfo `packageId` and retrieve available forms of content and metadata. A `/summary` json response is available that includes links and basic metadata about the package - generally equivalent to the information available on the details page for that package.
 >
@@ -97,6 +100,7 @@ sample_package_summary
 
 ```
 
+### What's in the XML?
 
 Now what can we get in the package's XML data
 
@@ -122,7 +126,6 @@ xml_find_all(sample_xml, "bill")
 ```
 
 
-## What's in the XML?
 
 ```{r}
 (sample_bill = xml_child(sample_xml, "bill"))
@@ -175,7 +178,7 @@ Some nodesets have multiple attributes so we'll need to work through those first
 
 ```
 
-### Committees
+#### Committees
 
 ```{r}
 # List of bill committees
@@ -230,7 +233,7 @@ committees_dfs = committees_list %>%
 
 ```
 
-### Actions
+#### Actions
 
 ```{r}
 
@@ -258,7 +261,7 @@ nested_attributes[["actions"]] %>% xml_path()
   }))
 ```
 
-### Sponsors
+#### Sponsors
 
 ```{r}
 nested_attributes[["sponsors"]] %>% xml_path()
@@ -284,7 +287,7 @@ bill_sponsors %>%
   }))
 ```
 
-### Cosponsors
+#### Cosponsors
 
 ```{r}
 nested_attributes[["cosponsors"]] %>% xml_path()
@@ -324,7 +327,12 @@ list(sample_df, committees_df, sponsors_df, actions_df)
          actions = list(actions_df)))
 ```
 
-## Putting this all together
+### Putting this all together
+
+With these data points parsed, I put together a number of functions (creatively named `parsing_functions` in the R folder) for processing an XML file.
+Before I dive deeper into the API, I'm going to use the bulk data to explore first.
+
+## Bulk Data
 
 Using the bulk data from https://www.govinfo.gov/bulkdata/BILLSTATUS/117/hr, we can 
 
@@ -345,24 +353,18 @@ toc()
 ```
 
 
-OR using the API
 
-```{r}
-map(bill_status$packages$packageId, getPackages)
-
-```
-
-## Explore HR117
+### Explore HR117
 
 ```{r}
 glimpse(hr117_df)
 ```
 
-One bill number per row?
+Confirm that there is one bill number per row?
 
 ```{r}
-add_count(hr117_df, billNumber) %>% 
-  count(n)
+add_count(hr117_df, billNumber, name = "rows_per_bill") %>% 
+  count(rows_per_bill)
 ```
 
 
