@@ -296,10 +296,7 @@ nested_attributes[["cosponsors"]] %>% xml_path()
   xml_find_all("item"))
 ```
 
-```{r}
-bill_cosponsors %>% 
-  xml_structure()
-```
+
 
 ```{r}
 (cosponsors_df = bill_cosponsors %>% 
