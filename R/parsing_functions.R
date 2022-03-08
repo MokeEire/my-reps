@@ -70,6 +70,24 @@ parse_subcommittee = function(subcommittee){
     rename_with(~str_c("subcommittee_", .))
 }
 
+parse_votes = function(recorded_votes){
+  modify_at(recorded_votes, "activities", map_dfr, ~rename_with(flatten_dfc(.x), ~str_c("activity_", .))) %>% 
+    flatten_dfc() %>% 
+    rename_with(~str_c("subcommittee_", .))
+}
+
+parse_vote_roll = function(vote){
+  
+  vote_xml = read_xml(vote)
+  
+  vote_data = xml_find_all(vote_xml, "vote-data")
+  
+  vote_list = as_list(vote_data)
+  
+  flatten_dfr(vote_list) %>% 
+    unnest(everything())
+}
+
 parse_action = function(action){
   action %>% 
     modify_at("sourceSystem", ~rename_with(flatten_dfc(.x), ~str_c("sourceSystem_", .))) %>% 
