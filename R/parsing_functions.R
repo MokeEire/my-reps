@@ -119,7 +119,8 @@ extract_bill_status = function(xml_file,
   bill_df = set_names(base_attr_list, map_chr(base_attr_list, xml_name)) %>% 
     map_dfc(xml_text)
 
-  xpaths = bill_xml %>% xml_children() %>% 
+  xpaths = bill_xml %>% 
+    xml_children() %>% 
       map_chr(xml_path)
   
   bill_nodesets = map(xpaths, ~ xml_find_all(bill_xml, xpath = .x)) %>% 
@@ -127,62 +128,76 @@ extract_bill_status = function(xml_file,
   
   # browser()
 
-  if(xml_length(xml_find_all(bill_nodesets[["committees"]], "billCommittees"))>0){
-    # Bill committees
-    bill_committees = bill_nodesets[["committees"]] %>% 
-      xml_find_all("billCommittees/item")
+  bill_committees = xml_find_all(bill_nodesets[["committees"]], "billCommittees")
+  
+  if(xml_length(bill_committees)>0){
+
+    committees = xml_find_all(bill_committees, "item")
+    # Coerce nodes to list
+    committees_list = map(committees, as_list)
     
-    committees_list = bill_committees %>% 
-      # Coerce nodes to list
-      map(as_list)
-    
-    committees_df = committees_list %>% 
-      map_dfr(parse_committee)
+    committees_df = map_dfr(committees_list, parse_committee)
     
     bill_df$committees = list(silent_convert(committees_df))
+    
+  } else {
+    bill_df$committees = list(tibble())
+  }
+  
+  
+  if(xml_length(bill_nodesets[["recordedVotes"]])>0){
+    
+    bill_votes = xml_find_all(bill_nodesets[["recordedVotes"]], "recordedVote")
+    # Coerce nodes to list
+    votes_list = as_list(bill_votes)
+
+    votes_df = map_dfr(votes_list, flatten_dfc)
+
+    # Add Vote tallies
+    vote_rolls_df = votes_df %>% 
+      mutate(vote_roll = map(url, parse_vote_roll))
+    
+    bill_df$votes = list(silent_convert(vote_rolls_df))
+  } else {
+    bill_df$votes = list(tibble())
   }
   
   
   if(xml_length(bill_nodesets[["actions"]])>0){
-    
-    # Actions
-    bill_actions = bill_nodesets[["actions"]] %>% 
-      xml_find_all("item")
-    
-    actions_df = bill_actions %>% 
-      # Coerce nodes to list
-      map(as_list) %>% 
+    bill_actions = xml_find_all(bill_nodesets[["actions"]], "item")
+    # Coerce nodes to list
+    actions_df = map(bill_actions, as_list) %>% 
       map_dfr(parse_action)
-    
+
     bill_df$actions = list(silent_convert(actions_df))
+  } else {
+    bill_df$actions = list(tibble())
   }
   
-  
-  if(xml_length(bill_nodesets[["sponsors"]])>0){
-    # Sponsors
-    bill_sponsors = bill_nodesets[["sponsors"]] %>% 
-      xml_find_all("item")
-    
-    sponsors_df = bill_sponsors %>% 
-      # Coerce nodes to list
-      map(as_list) %>% 
+  bill_sponsors = xml_find_all(bill_nodesets[["sponsors"]], "item")
+  if(xml_length(bill_sponsors)>0){
+
+    # Coerce nodes to list
+    sponsors_df = map(bill_sponsors, as_list) %>% 
       map_dfr(parse_sponsor)
     
     bill_df$sponsors = list(silent_convert(sponsors_df))
+  } else {
+    bill_df$sponsors = list(tibble())
   }
   
   
   # Cosponsors
   if(xml_length(bill_nodesets[["cosponsors"]])>0){
-    bill_cosponsors = bill_nodesets[["cosponsors"]] %>% 
-      xml_find_all("item")
     
-    cosponsors_df = bill_cosponsors %>% 
-      # Coerce nodes to list
-      map(as_list) %>% 
+    bill_cosponsors = xml_find_all(bill_nodesets[["cosponsors"]], "item")
+    # Coerce nodes to list
+    cosponsors_df = map(bill_cosponsors, as_list) %>% 
       map_dfr(parse_sponsor, role = "cosponsor")
     
     bill_df$cosponsors = list(silent_convert(cosponsors_df))
+  } else {
+    bill_df$cosponsors = list(tibble())
   }
   
   as_tibble(bill_df) %>% 
