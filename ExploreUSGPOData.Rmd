@@ -332,6 +332,11 @@ list(sample_df, committees_df, sponsors_df, actions_df)
 With these data points parsed, I put together a number of functions (creatively named `parsing_functions` in the R folder) for processing an XML file.
 Before I dive deeper into the API, I'm going to use the bulk data to explore first.
 
+```{r}
+fromJSON(URLencode(bill_status$nextPage))
+```
+
+
 ## Bulk Data
 
 Using the bulk data from https://www.govinfo.gov/bulkdata/BILLSTATUS/117/hr, we can 
@@ -339,7 +344,7 @@ Using the bulk data from https://www.govinfo.gov/bulkdata/BILLSTATUS/117/hr, we 
 
 ```{r}
 library(here)
-hr117_files = list.files(here("data", "BILLSTATUS-117-hr"), full.names = T)
+hr117_files = list.files(here("data", "BILLSTATUS","117", "hr"), full.names = T)
 
 (map_dfr(hr117_files[1:10], extract_bill_status) -> samples)
 ```
@@ -347,23 +352,81 @@ hr117_files = list.files(here("data", "BILLSTATUS-117-hr"), full.names = T)
 Using {furrr} has some benefits here
 
 ```{r}
+
 tic("All hr117 files")
 hr117_df = future_map_dfr(hr117_files, extract_bill_status)
 toc()
 ```
 
 
+```{r}
+glimpse(hr117_df)
+```
+
+```{r}
+(hr117_counts = hr117_df %>% 
+  mutate(across(where(is_list), function(col) case_when(map_lgl(col, is_tibble) ~ col,
+                                T ~ list(tibble()))),
+         across(where(is_list), list(count = ~map_dbl(., nrow)), .names = "{.col}_{.fn}")))
+```
+
+How often are each of the different elements found?
+
+- How often do bills have cosponsors?
+- How often are bills sent to committee?
+
+
+```{r}
+hr117_df %>% 
+  group_by(billType) %>% 
+  # Count the number of times each status element is found
+  summarise(bills = n(), across(where(is_list), ~sum(map_dbl(., is_tibble), na.rm=T))) %>% 
+  # Pivot and calculate this as a proportion
+  pivot_longer(cols = c(bills:cosponsors), names_to = "element", values_to = "count", ) %>% 
+  group_by(billType) %>% 
+  mutate(pct = scales::percent( count/max(count) )) # Max shouldn't fail but could use exclude bills from pivot
+```
+
+How many committees are bills usually sent to?
+
+```{r}
+map(hr117_df$committees, nrow) %>% glimpse()
+
+hr117_counts %>% 
+  ggplot(., aes(x = committees_count))+
+  geom_bar()+
+  scale_x_continuous()+
+  theme_minimal()
+```
+ 
+```{r}
+hr117_counts %>% 
+  ggplot(., aes(x = cosponsors_count))+
+  geom_bar()+
+  scale_x_continuous()+
+  theme_minimal()
+```
+
+
+ 
+```{r}
+hr117_counts %>% 
+  ggplot(., aes(x = votes_count))+
+  geom_bar()+
+  scale_x_continuous()+
+  theme_minimal()
+```
 
 ### Explore HR117
 
 ```{r}
-glimpse(hr117_df)
+glimpse(hr117_counts)
 ```
 
 Confirm that there is one bill number per row?
 
 ```{r}
-add_count(hr117_df, billNumber, name = "rows_per_bill") %>% 
+add_count(hr117_counts, billNumber, name = "rows_per_bill") %>% 
   count(rows_per_bill)
 ```
 
@@ -373,7 +436,7 @@ When are bills introduced?
 ```{r}
 library(mokeR)
 
-hr117_df %>% 
+hr117_counts %>% 
   count(introducedDate, wt = n_distinct(billNumber)) %>% 
   group_by(week = week(introducedDate), year = year(introducedDate)) %>% 
   mutate(bills_weekly = sum(n),
@@ -382,25 +445,26 @@ hr117_df %>%
   geom_col()+
   scale_x_date(expand = expansion())+
   scale_y_continuous(expand = expansion())+
-  theme_mark(plots_pane = T)
+  theme_minimal()
 ```
 
 ```{r}
-hr117_df %>% 
+hr117_counts %>% 
   rowwise() %>% 
   mutate(first_action = min(actions$actionDate, na.rm=T)) %>% 
   filter(first_action!=introducedDate) %>% 
-  pull(actions)
+  select(billNumber, introducedDate, first_action, actions) %>% 
+  unnest(actions)
 ```
 
 
 
 ```{r}
-hr117_actions = hr117_df %>% 
+hr117_actions = hr117_counts %>% 
   select(billNumber, actions) %>% 
   unnest(actions)
 
-hr117_actions%>% 
+hr117_actions %>% 
   count(action_type)
 ```
 
