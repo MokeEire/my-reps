@@ -358,6 +358,14 @@ hr117_df = future_map_dfr(hr117_files, extract_bill_status)
 toc()
 ```
 
+### Explore HR117
+
+Confirm that there is one bill number per row?
+
+```{r}
+add_count(hr117_df, billNumber, name = "rows_per_bill") %>% 
+  count(rows_per_bill)
+```
 
 ```{r}
 glimpse(hr117_df)
@@ -365,9 +373,15 @@ glimpse(hr117_df)
 
 ```{r}
 (hr117_counts = hr117_df %>% 
-  mutate(across(where(is_list), function(col) case_when(map_lgl(col, is_tibble) ~ col,
-                                T ~ list(tibble()))),
-         across(where(is_list), list(count = ~map_dbl(., nrow)), .names = "{.col}_{.fn}")))
+  mutate(# Count the number of rows in each element of each list column
+         across(where(is_list), list(count = ~map_dbl(., nrow)), .names = "{.col}_{.fn}"),
+         # Find whether the bill became law
+         became_law = map_lgl(actions, ~any(str_detect(.$action_type, "BecameLaw")))) %>% 
+  rowwise() %>% 
+   # Get the date of the first and last actions
+  mutate(date_first_action = min(actions$actionDate, na.rm=T),
+         date_last_action = max(actions$actionDate, na.rm=T))) %>% 
+  glimpse()
 ```
 
 How often are each of the different elements found?
@@ -377,12 +391,13 @@ How often are each of the different elements found?
 
 
 ```{r}
-hr117_df %>% 
+hr117_counts %>% 
   group_by(billType) %>% 
   # Count the number of times each status element is found
-  summarise(bills = n(), across(where(is_list), ~sum(map_dbl(., is_tibble), na.rm=T))) %>% 
+  summarise(bills = n(), 
+            across(ends_with("_count"), ~sum(.>0, na.rm=T))) %>% 
   # Pivot and calculate this as a proportion
-  pivot_longer(cols = c(bills:cosponsors), names_to = "element", values_to = "count", ) %>% 
+  pivot_longer(cols = c(bills:cosponsors_count), names_to = "element", values_to = "count", ) %>% 
   group_by(billType) %>% 
   mutate(pct = scales::percent( count/max(count) )) # Max shouldn't fail but could use exclude bills from pivot
 ```
@@ -390,7 +405,6 @@ hr117_df %>%
 How many committees are bills usually sent to?
 
 ```{r}
-map(hr117_df$committees, nrow) %>% glimpse()
 
 hr117_counts %>% 
   ggplot(., aes(x = committees_count))+
@@ -398,6 +412,17 @@ hr117_counts %>%
   scale_x_continuous()+
   theme_minimal()
 ```
+
+How many actions happen on a bill?
+
+```{r}
+hr117_counts %>% 
+  ggplot(., aes(x = actions_count))+
+  geom_bar()+
+  scale_x_continuous()+
+  theme_minimal()
+```
+
  
 ```{r}
 hr117_counts %>% 
@@ -417,19 +442,13 @@ hr117_counts %>%
   theme_minimal()
 ```
 
-### Explore HR117
-
 ```{r}
-glimpse(hr117_counts)
+hr117_counts %>% 
+  select(billNumber, votes) %>% 
+  unnest(votes) %>% 
+  unnest(vote_roll) %>% 
+  count(legislator, vote)
 ```
-
-Confirm that there is one bill number per row?
-
-```{r}
-add_count(hr117_counts, billNumber, name = "rows_per_bill") %>% 
-  count(rows_per_bill)
-```
-
 
 When are bills introduced?
 
@@ -445,16 +464,26 @@ hr117_counts %>%
   geom_col()+
   scale_x_date(expand = expansion())+
   scale_y_continuous(expand = expansion())+
-  theme_minimal()
+  theme_mark(plots_pane = T)
 ```
+
+#### Actions
 
 ```{r}
 hr117_counts %>% 
-  rowwise() %>% 
-  mutate(first_action = min(actions$actionDate, na.rm=T)) %>% 
-  filter(first_action!=introducedDate) %>% 
-  select(billNumber, introducedDate, first_action, actions) %>% 
-  unnest(actions)
+  select(billNumber, actions) %>% 
+  unnest(actions) %>% 
+  arrange(billNumber, actionDate, actionTime) %>% 
+  select(billNumber, actionDate, actionTime, action_type, action_sourceSystem_name, everything())
+```
+
+
+```{r}
+hr117_counts %>% 
+  filter(date_first_action!=introducedDate) %>% 
+  select(billNumber, introducedDate, date_first_action, actions) %>% 
+  unnest(actions) %>% 
+  filter(date_first_action == actionDate)
 ```
 
 
@@ -466,6 +495,12 @@ hr117_actions = hr117_counts %>%
 
 hr117_actions %>% 
   count(action_type)
+```
+
+```{r}
+hr117_counts %>% 
+  mutate(became_law = map_lgl(actions, ~any(str_detect(.$action_type, "BecameLaw")))) %>% 
+  filter(became_law)
 ```
 
 
