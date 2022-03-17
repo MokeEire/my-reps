@@ -1,3 +1,58 @@
+library(tidyverse)
+library(rjson)
+library(jsonlite)
+library(RCurl)
+library(lubridate)
+library(tidyjson)
+library(XML)
+library(xml2)
+library(log4r)
+
+log_layout = function(level, ...){
+  function(level,
+           ..., bill_type, bill_num){
+    msg = paste0(..., collapse = "")
+    
+    sprintf("%s | Bill #%s | %s | %s\n", bill_type, bill_num,
+            log4r:::fmt_current_time("%Y-%m-%d %H:%M:%S"),
+            msg)
+  }
+}
+
+create_logger = function(directory = here::here("logs")){
+  log_file = here::here(here::here("logs"), paste0("log-", format(lubridate::now(), "%Y-%m-%d--%H-%M-%S"), ".txt"))
+  file.create(log_file)
+  
+  log4r::logger(
+    appenders = list(
+      log4r::file_appender(log_file, append = T, layout = log_layout()),
+      log4r::console_appender(layout = log_layout())
+    )
+  )
+}
+
+log_info = function(logger, ...){
+  if(logger$threshold > log4r:::INFO)
+    return(invisible(NULL))
+  for (appender in logger$appenders){
+    appender(level="INFO", ...)
+  }
+}
+
+read_log = function(log_file){
+  if(missing(log_file)){
+    logs = file.info(list.files(here("logs"), full.names = T))
+    log_file = row.names(logs[which.max(logs$ctime), ])
+  }
+  read_delim(log_file, delim = " | ", 
+             col_names = c("bill_type", "bill_num", "time", "action"), 
+             col_types = "ccTc") %>% 
+    group_by(bill_type, bill_num) %>% 
+    mutate(parse_time_s = time_length(max(time) - min(time), unit = "second")) %>% 
+    ungroup() %>% 
+    arrange(bill_type, bill_num, time)
+}
+
 getPackages = function(packageId, summary = F, xml = T){
   summary_url = paste0("https://api.govinfo.gov/packages/", packageId, 
                        "/summary",
