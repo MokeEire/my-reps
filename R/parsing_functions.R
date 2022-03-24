@@ -74,7 +74,8 @@ getPackages = function(packageId, summary = F, xml = T){
 
 getPublished = function(dateIssuedStartDate, dateIssuedEndDate,
                         startingRecord = 0, numRecords = 20,
-                        collections){
+                        collections, congress,
+                        docClass){
   # If end date is provided, format it
   if(missing(dateIssuedEndDate)){
     end_date = ""
@@ -92,12 +93,26 @@ getPublished = function(dateIssuedStartDate, dateIssuedEndDate,
     "?offset=", startingRecord, "&pageSize=", numRecords, 
     # Collection
     "&collection=",collections,
+    if_else(missing(congress), "", paste0("&congress=", congress)),
+    if_else(missing(docClass), "", paste0("&docClass=", docClass)),
     # API key
     "&api_key=", apiGovKey
   )
   # encode the URL with characters for each space.
   full_url <- URLencode(url)
-  fromJSON(full_url)
+  
+  request = fromJSON(full_url)
+  packages = request$packages
+  while(!is_null(request$nextPage)){
+    next_page = URLencode(request$nextPage)
+    request = fromJSON(next_page)
+    # if(nrow(packages)> 9500){
+    #   browser()
+    # }
+    packages = bind_rows(packages, request$packages)
+    Sys.sleep(2)
+  }
+  packages
 }
 
 silent_convert = function(df, ...){
