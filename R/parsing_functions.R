@@ -154,6 +154,16 @@ parse_action = function(action){
     rename_with(.fn = ~str_c("action_", .), .cols = -starts_with("action"))
 }
 
+parse_amendment = function(amendment){
+  amendment %>% 
+    map_at("actions", function(actions){
+      actions %>% 
+        modify_at("actions", map_dfr, parse_action) %>% 
+        modify_at("actionTypeCounts", flatten_dfc) %>% 
+        modify_at("actionByCounts", flatten_dfc)
+    }) %>% flatten_dfc()
+}
+
 parse_sponsor = function(sponsor, role = "sponsor"){
   sponsor %>% 
     modify_at("identifiers", ~rename_with(flatten_dfc(.x), ~str_c("identifiers_", .))) %>% 
@@ -162,18 +172,30 @@ parse_sponsor = function(sponsor, role = "sponsor"){
 }
 
 extract_bill_status = function(xml_file, 
-                               base_attributes = c("billNumber", "title", "billType", "originChamber", 
+                               base_attributes = c("billNumber", "title", "billType", "policyArea", "originChamber", 
                                                    "introducedDate", "congress","createDate", "updateDate")){
+  logger = create_logger()
   
   bill_xml = read_xml(xml_file) %>% 
     xml_child("bill")
   # message("Bill #: ",xml_find_all(bill_xml, "billNumber") %>% xml_text())
   
-  
   base_attr_list = map(base_attributes, ~xml_find_all(bill_xml, xpath = .))
   
   bill_df = set_names(base_attr_list, map_chr(base_attr_list, xml_name)) %>% 
     map_dfc(xml_text)
+  
+  latest_action = xml_find_all(bill_xml, "latestAction") %>% 
+    as_list() %>% 
+    map(flatten_dfc) %>% 
+    map_dfr(~rename_with(.x, ~str_c("latestAction_", .)))
+  
+  subjects_list = xml_find_all(bill_xml, "subjects/billSubjects/legislativeSubjects/item") %>% 
+    xml_text()
+  
+  subjects = tibble(subjects = list(subjects_list))
+  
+  bill_df = bind_cols(bill_df, latest_action, subjects)
   
   log_info(logger, 
            bill_type = bill_df$billType,
@@ -188,7 +210,7 @@ extract_bill_status = function(xml_file,
     set_names(map_chr(., xml_name))
   
   # browser()
-
+  # Committees ---------
   log_info(logger, 
            bill_type = bill_df$billType,
            bill_num = bill_df$billNumber,
@@ -210,6 +232,7 @@ extract_bill_status = function(xml_file,
     bill_df$committees = list(tibble())
   }
   
+  # Votes ---------
   log_info(logger, 
            bill_type = bill_df$billType,
            bill_num = bill_df$billNumber,
@@ -233,6 +256,7 @@ extract_bill_status = function(xml_file,
     bill_df$votes = list(tibble())
   }
   
+  # Actions ---------
   log_info(logger, 
            bill_type = bill_df$billType,
            bill_num = bill_df$billNumber,
@@ -249,6 +273,25 @@ extract_bill_status = function(xml_file,
     bill_df$actions = list(tibble())
   }
   
+  # Amendments ---------
+  # log_info(logger, 
+  #          bill_type = bill_df$billType,
+  #          bill_num = bill_df$billNumber,
+  #          "Parsing amendments")
+  # amendments_node = bill_nodesets[["amendments"]]
+  # if(xml_length(amendments_node)>0){
+  #   browser()
+  #   bill_amendments = xml_find_all(amendments_node, "amendment")
+  #   # Coerce nodes to list
+  #   amendments_df = map(bill_amendments, as_list) %>% 
+  #     map_dfr(parse_action)
+  #   
+  #   bill_df$amendments = list(silent_convert(amendments_df))
+  # } else {
+  #   bill_df$amendments = list(tibble())
+  # }
+  
+  # Sponsors ---------
   log_info(logger, 
            bill_type = bill_df$billType,
            bill_num = bill_df$billNumber,
@@ -267,7 +310,7 @@ extract_bill_status = function(xml_file,
   }
   
   
-  # Cosponsors
+  # Cosponsors ---------
   log_info(logger, 
            bill_type = bill_df$billType,
            bill_num = bill_df$billNumber,
