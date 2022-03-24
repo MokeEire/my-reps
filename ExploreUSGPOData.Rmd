@@ -51,11 +51,11 @@ Get a list of packages from the **Bill Status** collection which were issued in 
 
 ```{r}
 
-bill_status = getPublished(dateIssuedStartDate = ymd("2021-01-01"),
-                           dateIssuedEndDate = ymd("2022-01-01"),
+hr_117_bill_status = getPublished(dateIssuedStartDate = ymd("2020-01-01"),
                            numRecords = 100,
-                           collections = "BILLSTATUS")
-glimpse(bill_status)
+                           collections = "BILLSTATUS", congress = 117,
+                           docClass = "hr")
+glimpse(hr_117_bill_status)
 ```
 
 The return object is a list with a count of records, the API query for the next page, and a dataframe of packages. 
@@ -66,13 +66,10 @@ This dataframe contains:
 - the bill type
 - the congress number
 
-```{r}
-glimpse(bill_status$packages)
-```
 Let's take a sample package and see what information we can get with that.
 
 ```{r}
-sample_package = sample_n(bill_status$packages, 1)
+sample_package = sample_n(hr_117_bill_status, 1)
 
 sample_package
 ```
@@ -83,17 +80,17 @@ sample_package
 >
 >From the summary, you can get access to all available content and metadata formats for a package.
 
-
+We can get the summary using: 
 
 ```{r}
-sample_package_summary = getPackages(packageId = sample_package$packageId, 
-                                     summary = T) %>% 
-  # If I want to create list column for download links
-  # map_if(is_list, as_tibble) %>%
-  # as_tibble()
-  flatten_dfc()
+(sample_package_summary = getPackages(packageId = sample_package$packageId, 
+                                     summary = T))
 
-sample_package_summary
+```
+
+Or for all packages?
+
+```{r}
 
 ```
 
