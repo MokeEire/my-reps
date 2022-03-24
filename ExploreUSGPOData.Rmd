@@ -330,40 +330,50 @@ fromJSON(URLencode(bill_status$nextPage))
 
 ## Bulk Data
 
-Using the bulk data from https://www.govinfo.gov/bulkdata/BILLSTATUS/117/hr, we can 
+Using the bulk data from https://www.govinfo.gov/bulkdata/BILLSTATUS/117/
 
+Directory structure
 
 ```{r}
-library(here)
-hr117_files = list.files(here("data", "BILLSTATUS","117", "hr"), full.names = T)
+fs::dir_tree(here("data", "BILLSTATUS", "117"), recurse = F)
+```
 
-(map_dfr(hr117_files[1:10], extract_bill_status) -> samples)
+### House bills
+
+```{r}
+house_bill_types = c("hconres", "hjres", "hr", "hres")
+
+house_117_files = list.files(here("data", "BILLSTATUS","117", house_bill_types), full.names = T)
+
 ```
 
 Using {furrr} has some benefits here
 
 ```{r}
+# How many bills to sample?
+n_sample = 100
+house_sample = sample(house_117_files, n_sample)
 
-tic("All hr117 files")
-hr117_df = future_map_dfr(hr117_files, extract_bill_status)
+tic(paste("Extracting", n_sample, "files"))
+house_117_df = future_map_dfr(house_sample, extract_bill_status)
 toc()
 ```
-
-### Explore HR117
 
 Confirm that there is one bill number per row?
 
 ```{r}
-add_count(hr117_df, billNumber, name = "rows_per_bill") %>% 
+add_count(house_117_df, billNumber, name = "rows_per_bill") %>% 
   count(rows_per_bill)
 ```
 
 ```{r}
-glimpse(hr117_df)
+glimpse(house_117_df)
 ```
 
+Count the number of items (committees, votes, actions, etc.) in each list column
+
 ```{r}
-(hr117_counts = hr117_df %>% 
+(house_117_counts = house_117_df %>% 
   mutate(# Count the number of rows in each element of each list column
          across(where(is_list), list(count = ~map_dbl(., nrow)), .names = "{.col}_{.fn}"),
          # Find whether the bill became law
@@ -371,9 +381,39 @@ glimpse(hr117_df)
   rowwise() %>% 
    # Get the date of the first and last actions
   mutate(date_first_action = min(actions$actionDate, na.rm=T),
-         date_last_action = max(actions$actionDate, na.rm=T))) %>% 
+         date_last_action = max(actions$actionDate, na.rm=T)) %>% 
+   ungroup()) %>% 
   glimpse()
 ```
+#### Examine single bill
+
+What does the comprehensive data look like for a single bill?
+
+```{r}
+(house_117_bill = sample_n(filter(house_117_counts, votes_count > 0), 1))
+```
+
+```{r}
+house_117_bill %>% 
+  # unnest(committees) %>% 
+  # select(-where(~is_list(.) && map_dbl(., nrow) == 0)) %>% 
+  # unnest(committee_activities) %>% 
+  unnest(actions) %>% View()
+  
+  
+```
+
+```{r}
+house_117_bill %>% 
+  unnest(actions) %>% 
+  ggplot(., aes(x = actionDate, y = 1, group = billNumber))+
+  geom_line()+
+  geom_jitter(aes(colour = action_type))+
+  scale_x_date(labels = scales::label_date_short())+
+  facet_wrap(~action_sourceSystem_name, ncol = 1)+
+  theme_mark(plots_pane = T)
+```
+
 
 How often are each of the different elements found?
 
@@ -382,7 +422,7 @@ How often are each of the different elements found?
 
 
 ```{r}
-hr117_counts %>% 
+house_117_counts %>% 
   group_by(billType) %>% 
   # Count the number of times each status element is found
   summarise(bills = n(), 
@@ -444,7 +484,7 @@ hr117_counts %>%
 When are bills introduced?
 
 ```{r}
-library(mokeR)
+
 
 hr117_counts %>% 
   count(introducedDate, wt = n_distinct(billNumber)) %>% 
@@ -461,11 +501,11 @@ hr117_counts %>%
 #### Actions
 
 ```{r}
-hr117_counts %>% 
-  select(billNumber, actions) %>% 
+house_117_counts %>% 
+  select(billNumber, billType, title, actions) %>% 
   unnest(actions) %>% 
-  arrange(billNumber, actionDate, actionTime) %>% 
-  select(billNumber, actionDate, actionTime, action_type, action_sourceSystem_name, everything())
+  arrange(billNumber, action_sourceSystem_name, actionDate, actionTime) %>% 
+  select(billNumber, billType, title, action_sourceSystem_name, action_committee_name, actionDate, actionTime, action_type, actionCode, action_text) %>% View()
 ```
 
 
