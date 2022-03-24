@@ -3,20 +3,14 @@ title: "How long does it take policy to be made?"
 output: html_notebook
 ---
 
-I want to collect congressional data to see if I can identify how long bills take to become law.
-It will also be interesting to see what proportion of proposed bills become law.
+I want to collect congressional data to see if I can identify how long bills typically take to become law, which parts of the process are the most time-intensive, and which decision-makers are acting in each stage?
+
 
 ```{r setup}
-library(tidyverse)
-library(rjson)
-library(jsonlite)
-library(RCurl)
-library(lubridate)
-library(tidyjson)
-library(XML)
-library(xml2)
+library(extrafont)
 library(tictoc)
 library(furrr)
+library(here)
 plan(multisession)
 source("R/parsing_functions.R")
 
