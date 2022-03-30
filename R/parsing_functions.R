@@ -203,7 +203,8 @@ parse_sponsor = function(sponsor, role = "sponsor"){
 
 extract_bill_status = function(xml_file, 
                                base_attributes = c("billNumber", "title", "billType", "policyArea", "originChamber", 
-                                                   "introducedDate", "congress","createDate", "updateDate")){
+                                                   "introducedDate", "congress","createDate", "updateDate"),
+                               nested_attributes = c("committees", "votes", "actions", "sponsors", "cosponsors")){
   logger = create_logger()
   
   bill_xml = read_xml(xml_file) %>% 
@@ -248,7 +249,7 @@ extract_bill_status = function(xml_file,
   
   bill_committees = xml_find_all(bill_nodesets[["committees"]], "billCommittees")
   
-  if(xml_length(bill_committees)>0){
+  if("committees" %in% nested_attributes && xml_length(bill_committees)>0){
 
     committees = xml_find_all(bill_committees, "item")
     # Coerce nodes to list
@@ -292,7 +293,7 @@ extract_bill_status = function(xml_file,
            bill_num = bill_df$billNumber,
            "Parsing actions")
   actions_node = bill_nodesets[["actions"]]
-  if(xml_length(actions_node)>0){
+  if("actions" %in% nested_attributes && xml_length(actions_node)>0){
     bill_actions = xml_find_all(actions_node, "item")
     # Coerce nodes to list
     actions_df = map(bill_actions, as_list) %>% 
@@ -328,7 +329,7 @@ extract_bill_status = function(xml_file,
            "Parsing sponsors")
   
   bill_sponsors = xml_find_all(bill_nodesets[["sponsors"]], "item")
-  if(xml_length(bill_sponsors)>0){
+  if("sponsors" %in% nested_attributes && xml_length(bill_sponsors)>0){
 
     # Coerce nodes to list
     sponsors_df = map(bill_sponsors, as_list) %>% 
@@ -346,7 +347,7 @@ extract_bill_status = function(xml_file,
            bill_num = bill_df$billNumber,
            "Parsing cosponsors")
   cosponsors_node = bill_nodesets[["cosponsors"]]
-  if(xml_length(cosponsors_node)>0){
+  if("cosponsors" %in% nested_attributes && xml_length(cosponsors_node)>0){
     
     bill_cosponsors = xml_find_all(cosponsors_node, "item")
     # Coerce nodes to list
