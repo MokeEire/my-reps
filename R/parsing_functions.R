@@ -270,7 +270,7 @@ extract_bill_status = function(xml_file,
            "Parsing votes")
   
   votes_node = bill_nodesets[["recordedVotes"]]
-  if(xml_length(votes_node)>0){
+  if("votes" %in% nested_attributes && xml_length(votes_node)>0){
     
     bill_votes = xml_find_all(votes_node, "recordedVote")
     # Coerce nodes to list
@@ -280,7 +280,11 @@ extract_bill_status = function(xml_file,
 
     # Add Vote tallies
     vote_rolls_df = votes_df %>% 
-      mutate(vote_roll = map(url, parse_vote_roll))
+      mutate(vote_roll = map(url, parse_vote_roll, 
+                             logger = logger, 
+                             bill_type = bill_df$billType,
+                             bill_num = bill_df$billNumber),
+             roll_found = map_lgl(vote_roll, ~(nrow(.) > 0)))
     
     bill_df$votes = list(silent_convert(vote_rolls_df))
   } else {
