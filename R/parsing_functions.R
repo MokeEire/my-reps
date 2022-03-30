@@ -147,19 +147,34 @@ parse_votes = function(recorded_votes){
     rename_with(~str_c("subcommittee_", .))
 }
 
-parse_vote_roll = function(vote){
+parse_vote_roll = function(vote, logger, bill_type, bill_num){
   
-  vote_xml = read_xml(vote)
+  tryCatch(
+    {
+      vote_xml = read_xml(vote, options = "RECOVER")
+      vote_data = xml_find_all(vote_xml, "vote-data")
+      vote_data = xml_find_all(vote_xml, "vote-data")
+      
+      vote_list = as_list(vote_data)
+      
+      flatten_dfr(vote_list) %>% 
+        unnest(everything())
+    },
+    error=function(cond) {
+      log_info(logger, 
+               bill_type = bill_type,
+               bill_num = bill_num, 
+               "ERROR: Vote roll could not be parsed")
+      # Choose a return value in case of error
+      return(tibble())
+    }
+  )
   
-  vote_data = xml_find_all(vote_xml, "vote-data")
   
-  vote_list = as_list(vote_data)
-  
-  flatten_dfr(vote_list) %>% 
-    unnest(everything())
 }
 
 parse_action = function(action){
+  # 
   action %>% 
     modify_at("sourceSystem", ~rename_with(flatten_dfc(.x), ~str_c("sourceSystem_", .))) %>% 
     modify_at("committees", function(committee){
