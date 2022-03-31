@@ -202,8 +202,8 @@ parse_sponsor = function(sponsor, role = "sponsor"){
 }
 
 extract_bill_status = function(xml_file, 
-                               base_attributes = c("billNumber", "title", "billType", "policyArea", "originChamber", 
-                                                   "introducedDate", "congress","createDate", "updateDate"),
+                               base_attributes = c("congress", "title", "billType", "billNumber", "originChamber", "policyArea", 
+                                                   "introducedDate","createDate", "updateDate"),
                                nested_attributes = c("committees", "votes", "actions", "sponsors", "cosponsors")){
   logger = create_logger()
   
