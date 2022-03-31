@@ -299,11 +299,20 @@ extract_bill_status = function(xml_file,
   actions_node = bill_nodesets[["actions"]]
   if("actions" %in% nested_attributes && xml_length(actions_node)>0){
     bill_actions = xml_find_all(actions_node, "item")
+    
+    bill_action_counts = xml_find_all(actions_node, "./*[not(self::item)]") %>% 
+      as_list() %>% 
+      map_dfc(flatten_dfc) %>% 
+      rename_with(.cols = everything(), ~str_c("actions_", .)) %>% 
+      pivot_longer(everything(), names_to = "action", names_prefix = "actions_", values_to = "count")
+    
     # Coerce nodes to list
     actions_df = map(bill_actions, as_list) %>% 
       map_dfr(parse_action)
 
     bill_df$actions = list(silent_convert(actions_df))
+    
+    bill_df$action_counts = list(silent_convert(bill_action_counts))
   } else {
     bill_df$actions = list(tibble())
   }
