@@ -1,9 +1,18 @@
 ---
-title: "How long does it take policy to be made?"
+title: "Exploring behaviour in US Legislation data"
 output: html_notebook
 ---
 
-I want to collect congressional data to see if I can identify how long bills typically take to become law, which parts of the process are the most time-intensive, and which decision-makers are acting in each stage?
+An overarching goal of the exploration is to create an app which provides people with a clearer view of who their representatives are and what they are doing.
+I think the ideal solution combines Datamade's [beautifully simple representative finder](https://myreps.datamade.us/) and Project Vote Smart's [vast collection of data on legislator activities](https://justfacts.votesmart.org/).
+
+Other avenues of inquiry that have come to mind:
+
+- examine how long bills typically take to become law, which parts of the process are the most time-intensive, and which decision-makers are acting in each stage?
+- map the legislative process for bills and get a sense for how legislator behaviour affects a bill's likelihood of being considered, its content, and the eventual outcome
+- Make a sankey diagram depicting how bills flow through congress
+
+It might be worth reaching out to: https://github.com/unitedstates/congress
 
 
 ```{r setup}
@@ -20,6 +29,7 @@ apiGovKey = getOption("apiGovKey")
 
 # GovInfo API
 
+The US government maintains an API which provides access to a lot of congressional information.
 [US General Publishing Office API documentation on github](https://github.com/usgpo/api)
 
 API call format:
