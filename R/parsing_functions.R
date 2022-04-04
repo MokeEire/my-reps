@@ -199,37 +199,104 @@ parse_amendment = function(amendment){
 
 parse_sponsor = function(sponsor, role = "sponsor"){
   sponsor %>% 
-    modify_at("identifiers", ~rename_with(flatten_dfc(.x), ~str_c("identifiers_", .))) %>% 
+    modify_at("identifiers", ~flatten_rename(.x, "identifiers")) %>% 
     flatten_dfc() %>% 
     rename_with(.fn = ~str_c(role, "_", .), .cols = -starts_with(role))
 }
 
+xml_nonempty_nodes = function(xml_node){
+  xml_children(xml_node)[xml_length(xml_children(xml_node)) == 0] %>% 
+    keep(~(xml_text(.) != ""))
+}
+
+attribute_col_types = list(
+  actions = cols(actionDate = col_date(), 
+                 actionTime = col_time(),
+                 action_committee_systemCode = col_character(), 
+                 action_committee_name = col_character(), 
+                 action_source_code = col_character(),
+                 action_source_name = col_character(),
+                 action_text = col_character(), 
+                 action_type = col_character(), 
+                 actionCode = col_character()),
+  cosponsors = cols(cosponsor_bioguideId = col_character(), 
+                    cosponsor_fullName = col_character(), 
+                    cosponsor_firstName = col_character(), 
+                    cosponsor_lastName = col_character(), 
+                    cosponsor_party = col_character(), 
+                    cosponsor_state = col_character(), 
+                    cosponsor_identifiers_lisID = col_character(),
+                    cosponsor_identifiers_bioguideId = col_character(),
+                    cosponsor_district = col_character(),
+                    cosponsor_sponsorshipDate = col_date(),
+                    cosponsor_sponsorshipWithdrawnDate = col_date(),
+                    cosponsor_isOriginalCosponsor = col_character(),
+                    cosponsor_middleName = col_character())
+)
+
+count_attr_colnames = function(xml_file, attribute = "actions"){
+  bill_xml = read_xml(xml_file) %>% 
+    xml_child("bill")
+  
+  if(attribute == "actions"){
+    xml_find_all("actions/item") %>%
+      as_list() %>% 
+      map_dfr(parse_action) %>% 
+      colnames()
+  }
+}
+
 extract_bill_status = function(xml_file, 
-                               base_attributes = c("congress", "title", "billType", "billNumber", "originChamber", "policyArea", 
-                                                   "introducedDate","createDate", "updateDate"),
-                               nested_attributes = c("committees", "votes", "actions", "sponsors", "cosponsors")){
+                               base_attributes = c("congress", "originChamber", "billType", "billNumber", "title", 
+                                                   "introducedDate","createDate", "updateDate", "policyArea"),
+                               nested_attributes = c("committees", "votes", "actions", "sponsors", "cosponsors"),
+                               col_specs = attribute_col_types){
   logger = create_logger()
   
   bill_xml = read_xml(xml_file) %>% 
     xml_child("bill")
-  # message("Bill #: ",xml_find_all(bill_xml, "billNumber") %>% xml_text())
   
-  base_attr_list = map(base_attributes, ~xml_find_all(bill_xml, xpath = .))
+  singletons = xml_nonempty_nodes(bill_xml)
   
-  bill_df = set_names(base_attr_list, map_chr(base_attr_list, xml_name)) %>% 
-    map_dfc(xml_text)
-  
+  # Singletons strewn together
+  bill_df = map_dfc(singletons , xml_text) %>% 
+    set_names(xml_name(singletons))
+
+  # Extract non-singular base attributes
+  ## Policy area
+  policy_areas = xml_find_all(bill_xml, "policyArea/name") %>% 
+    as_list() %>% 
+    map_chr(flatten_chr)
+  ## Subjects
+  bill_subjects = xml_find_all(bill_xml, "subjects/billSubjects/legislativeSubjects/item/name") %>% 
+    as_list() %>% 
+    map_chr(flatten_chr)
+  ## Summaries
+  bill_summaries = xml_find_all(bill_xml, "summaries/billSummaries/item") %>% 
+    as_list() %>% 
+    map_dfr(flatten_dfc)
+  ## Titles
+  bill_titles = xml_find_all(bill_xml, "titles/item") %>% 
+    as_list() %>% 
+    map_dfr(flatten_dfc)
+  ## Text versions
+  bill_text_versions = xml_find_all(bill_xml, "textVersions/item") %>% 
+    as_list() %>% 
+    map(map_at, "formats", map_dfr, flatten_dfc) %>% 
+    map_dfr(flatten_dfc)
+  ## Latest action
   latest_action = xml_find_all(bill_xml, "latestAction") %>% 
     as_list() %>% 
     map(flatten_dfc) %>% 
     map_dfr(~rename_with(.x, ~str_c("latestAction_", .)))
   
-  subjects_list = xml_find_all(bill_xml, "subjects/billSubjects/legislativeSubjects/item") %>% 
-    xml_text()
-  
-  subjects = tibble(subjects = list(subjects_list))
-  
-  bill_df = bind_cols(bill_df, latest_action, subjects)
+  bill_df = bill_df %>% 
+    mutate(policy_areas = list(policy_areas),
+           legislative_subjects = list(bill_subjects),
+           bill_summaries = list(bill_summaries),
+           bill_titles = list(bill_titles),
+           bill_text_versions = list(bill_text_versions)) %>% 
+    bind_cols(latest_action)
   
   log_info(logger, 
            bill_type = bill_df$billType,
