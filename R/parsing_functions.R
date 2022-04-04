@@ -116,12 +116,16 @@ getPublished = function(dateIssuedStartDate, dateIssuedEndDate,
 }
 
 silent_convert = function(df, ...){
-  suppressMessages(readr::type_convert(df, ...))
+  suppressWarnings(suppressMessages(readr::type_convert(df, ...)))
+}
+
+flatten_rename = function(list_to_flatten, name_prefix = "prefix"){
+  rename_with(flatten_dfc(list_to_flatten), ~str_c(name_prefix, "_", .))
 }
 
 parse_committee = function(committee){
   committee_tibbled = committee %>% 
-    modify_at("activities", map_dfr, ~rename_with(flatten_dfc(.x), ~str_c("committee_activity_", .))) %>% 
+    modify_at("activities", map_dfr, ~flatten_rename(.x, "committee_activity")) %>% 
     modify_at("subcommittees", function(subcommittee){
       map_dfr(subcommittee, parse_subcommittee)
     })
@@ -136,13 +140,13 @@ parse_committee = function(committee){
 }
 
 parse_subcommittee = function(subcommittee){
-  modify_at(subcommittee, "activities", map_dfr, ~rename_with(flatten_dfc(.x), ~str_c("activity_", .))) %>% 
+  modify_at(subcommittee, "activities", map_dfr, ~flatten_rename(.x, "activity")) %>% 
     flatten_dfc() %>% 
     rename_with(~str_c("subcommittee_", .))
 }
 
 parse_votes = function(recorded_votes){
-  modify_at(recorded_votes, "activities", map_dfr, ~rename_with(flatten_dfc(.x), ~str_c("activity_", .))) %>% 
+  modify_at(recorded_votes, "activities", map_dfr, ~flatten_rename(.x, "activity")) %>% 
     flatten_dfc() %>% 
     rename_with(~str_c("subcommittee_", .))
 }
@@ -174,11 +178,10 @@ parse_vote_roll = function(vote, logger, bill_type, bill_num){
 }
 
 parse_action = function(action){
-  # 
   action %>% 
-    modify_at("sourceSystem", ~rename_with(flatten_dfc(.x), ~str_c("sourceSystem_", .))) %>% 
+    modify_at("sourceSystem", ~flatten_rename(.x, "source")) %>% 
     modify_at("committees", function(committee){
-      map_dfr(committee, ~rename_with(flatten_dfc(.x), ~str_c("committee_", .)))
+      map_dfr(committee, ~flatten_rename(.x, "committee"))
     }) %>% 
     flatten_dfc() %>% 
     rename_with(.fn = ~str_c("action_", .), .cols = -starts_with("action"))
