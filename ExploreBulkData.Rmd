@@ -10,6 +10,7 @@ library(extrafont)
 library(tictoc)
 library(furrr)
 library(here)
+library(reactable)
 plan(multisession)
 source("R/parsing_functions.R")
 ```
@@ -64,8 +65,33 @@ glimpse(sample_bill_df)
 
 
 ```{r}
-select(sample_bill_df, congress, title, where(negate(is_list))) %>% 
-  reactable
+select(sample_bill_df, where(negate(is_list))) %>% 
+  reactable(
+    columns = list(
+      congress = colDef(width = 60),
+      billType = colDef(name = "Bill Type", width = 50),
+      billNumber = colDef(name = "Bill #", width = 40),
+      title = colDef(name = "Bill Title", width = 160),
+      createDate = colDef(name = "Created", format = colFormat(date = T, locales = "en-GB")),
+      latestAction_actionDate = colDef(name = "Latest Action Date", format = colFormat(date = T, locales = "en-GB")),
+      latestAction_text = colDef(name = "Latest Action", width = 160),
+      updateDate = colDef(name = "Updated", format = colFormat(date = T, locales = "en-GB")),
+      introducedDate = colDef(name = "Introduced", format = colFormat(date = T, locales = "en-GB"))
+    )
+  )
+```
+### Actions
+
+What actions were are taken on a bill?
+After a bill is introduced, how do members of congress interact with it? 
+
+
+```{r}
+sample_bill_df %>% 
+  select(where(negate(is_list)), actions) %>% 
+  unnest(actions) %>% 
+  nest(action_codes = c(actionCode, action_sourceSystem_code, action_sourceSystem_name)) %>% 
+  mutate(action_n = map_dbl(action_codes, nrow))
 ```
 
 
