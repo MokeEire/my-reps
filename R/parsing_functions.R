@@ -327,7 +327,7 @@ extract_bill_status = function(xml_file,
     
     committees_df = map_dfr(committees_list, parse_committee)
     
-    bill_df$committees = list(silent_convert(committees_df))
+    bill_df$committees = list(committees_df)
     
   } else {
     bill_df$committees = list(tibble())
@@ -356,7 +356,7 @@ extract_bill_status = function(xml_file,
                              bill_num = bill_df$billNumber),
              roll_found = map_lgl(vote_roll, ~(nrow(.) > 0)))
     
-    bill_df$votes = list(silent_convert(vote_rolls_df))
+    bill_df$votes = list(vote_rolls_df)
   } else {
     bill_df$votes = list(tibble())
   }
@@ -377,12 +377,13 @@ extract_bill_status = function(xml_file,
       pivot_longer(everything(), names_to = "action", names_prefix = "actions_", values_to = "count")
     
     # Coerce nodes to list
-    actions_df = map(bill_actions, as_list) %>% 
+    actions_df = as_list(bill_actions) %>% 
       map_dfr(parse_action)
-
-    bill_df$actions = list(silent_convert(actions_df))
     
-    bill_df$action_counts = list(silent_convert(bill_action_counts))
+    bill_df$actions = list(type_convert(actions_df, col_types = col_specs$actions))
+    
+    bill_df$action_counts = list(type_convert(bill_action_counts,
+                                              col_types = cols(action = col_character(), count = col_integer())))
   } else {
     bill_df$actions = list(tibble())
   }
@@ -418,7 +419,7 @@ extract_bill_status = function(xml_file,
     sponsors_df = map(bill_sponsors, as_list) %>% 
       map_dfr(parse_sponsor)
     
-    bill_df$sponsors = list(silent_convert(sponsors_df))
+    bill_df$sponsors = list(sponsors_df)
   } else {
     bill_df$sponsors = list(tibble())
   }
@@ -437,11 +438,17 @@ extract_bill_status = function(xml_file,
     cosponsors_df = map(bill_cosponsors, as_list) %>% 
       map_dfr(parse_sponsor, role = "cosponsor")
     
-    bill_df$cosponsors = list(silent_convert(cosponsors_df))
+    bill_df$cosponsors = list(type_convert(cosponsors_df, col_types = col_specs$cosponsors))
   } else {
     bill_df$cosponsors = list(tibble())
   }
   
   as_tibble(bill_df) %>% 
-    silent_convert()
+    # Combine bill type and number to create an ID
+    unite(bill_id, billType, billNumber, sep = "-", remove = F)
+}
+
+trunc_columns = function(df){
+  df %>% 
+    mutate(across(where(is_character), str_trunc, width = 32))
 }
