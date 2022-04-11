@@ -23,7 +23,7 @@ library(here)
 plan(multisession)
 source("R/parsing_functions.R")
 
-apiGovKey = getOption("apiGovKey")
+apiGovKey = Sys.getenv("GOVINFO_API_KEY")
 
 ```
 
