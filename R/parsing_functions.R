@@ -66,7 +66,7 @@ getPackages = function(packageId, summary = F, xml = T){
   }
   
   if(xml){
-    read_xml(summary_json$xmlLink)
+    summary_json$xmlLink
   }
   
   
