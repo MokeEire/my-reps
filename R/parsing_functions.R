@@ -98,6 +98,7 @@ getPublished = function(dateIssuedStartDate, dateIssuedEndDate,
     # API key
     "&api_key=", apiGovKey
   )
+  # browser()
   # encode the URL with characters for each space.
   full_url <- URLencode(url)
   
@@ -106,11 +107,11 @@ getPublished = function(dateIssuedStartDate, dateIssuedEndDate,
   while(!is_null(request$nextPage)){
     next_page = URLencode(request$nextPage)
     request = fromJSON(next_page)
-    # if(nrow(packages)> 9500){
-    #   browser()
-    # }
+    if(nrow(packages)> 9500){
+      browser()
+    }
     packages = bind_rows(packages, request$packages)
-    Sys.sleep(2)
+    Sys.sleep(.1)
   }
   packages
 }
