@@ -68,6 +68,7 @@ getPackages = function(packageId, summary = F, xml = T){
   # encode the URL with characters for each space.
   summary_json = fromJSON(URLencode(summary_url)) %>% 
     flatten_dfc()
+  
   if(summary){
     return(summary_json)
   }
@@ -79,6 +80,19 @@ getPackages = function(packageId, summary = F, xml = T){
   
 }
 
+
+get_package_xml = function(packageId){
+  
+  summary_url = paste0("https://api.govinfo.gov/packages/", packageId, 
+                       "/summary",
+                       "?api_key=", apiGovKey)
+  
+  # encode the URL with characters for each space.
+  fromJSON(URLencode(summary_url)) %>% 
+    pluck("download", "xmlLink")
+  
+}
+
 getPublished = function(dateIssuedStartDate, dateIssuedEndDate,
                         startingRecord = 0, numRecords = 20,
                         collections, congress,
@@ -87,15 +101,15 @@ getPublished = function(dateIssuedStartDate, dateIssuedEndDate,
   if(missing(dateIssuedEndDate)){
     end_date = ""
   } else {
-    end_date = paste0("/", format(dateIssuedEndDate, "%Y-%m-%dT%H:%M:%SZ"))
+    end_date = paste0("/", format_date_api(dateIssuedEndDate))
   }
   
-  # Construct URL
+  # Construct URL to request
   url = paste0(
     # Root
     "https://api.govinfo.gov/published/",
     # Start and end dates
-    format(dateIssuedStartDate, "%Y-%m-%dT%H:%M:%SZ"), end_date,
+    format_date_api(dateIssuedStartDate), end_date,
     # Record indexing
     "?offset=", startingRecord, "&pageSize=", numRecords, 
     # Collection
@@ -105,22 +119,30 @@ getPublished = function(dateIssuedStartDate, dateIssuedEndDate,
     # API key
     "&api_key=", apiGovKey
   )
-  # browser()
-  # encode the URL with characters for each space.
-  full_url <- URLencode(url)
   
-  request = fromJSON(full_url)
+  
+  # Request URL encoded for any spaces
+  request = fromJSON(URLencode(url))
+  # Assign the packages dataframe
   packages = request$packages
+  
+  # Request the next page of results while a next page exists
   while(!is_null(request$nextPage)){
     next_page = URLencode(request$nextPage)
     request = fromJSON(next_page)
+    
+    # Requests tend to fail as we approach 10k results
     if(nrow(packages)> 9500){
       browser()
     }
+    # Append new results to packages
     packages = bind_rows(packages, request$packages)
+    
+    # A tiny bit of sleep seems to reduce API errors
     Sys.sleep(.1)
   }
-  packages
+  
+  return(packages)
 }
 
 
@@ -134,6 +156,11 @@ silent_convert = function(df, ...){
 
 flatten_rename = function(list_to_flatten, name_prefix = "prefix"){
   rename_with(flatten_dfc(list_to_flatten), ~str_c(name_prefix, "_", .))
+}
+
+format_date_api = function(date){
+  stopifnot(is.Date(date) || is.timepoint(date))
+  format(date, "%Y-%m-%dT%H:%M:%SZ")
 }
 
 
