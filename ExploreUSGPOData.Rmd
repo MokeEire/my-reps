@@ -27,23 +27,33 @@ apiGovKey = Sys.getenv("GOVINFO_API_KEY")
 
 ```
 
+To understand how our representatives are acting, we need to know what they're actually doing.
+This can come in the form of introducing legislation, being part of a committee that considers a bill, and simply voting for or against legislation at various stages in the process.
+The US government maintains the govinfo API which provides access to a lot of congressional information, including the actions taken on a bill throughout its lifetime, which is the first source I'll be looking at to explore representative behaviour.
+
+
 # GovInfo API
 
-The US government maintains an API which provides access to a lot of congressional information.
-[US General Publishing Office API documentation on github](https://github.com/usgpo/api)
+>govinfo is a service of the United States Government Publishing Office (GPO), which is a Federal agency in the legislative branch.
+>
+govinfo provides free public access to official publications from all three branches of the Federal Government.
 
-API call format:
+Resources:
 
-https:// api.govinfo.gov/published/`dateIssuedStartDate`/`dateIssuedEndDate`?offset=`startingRecord`&pageSize=`number of records in call`&collection=`comma-separated list of values`&api_key=`your api.data.gov api key`
+- [govinfo website](https://www.govinfo.gov/)
+- [govinfo API documentation on github](https://github.com/usgpo/api)
+
+## Collections
+
+>A collection is a set of content that has a consistent format -- for example, the Congressional Record is considered a collection within govinfo, as well as the Federal Register. Within govinfo, a number of these collections have `collection codes`, which are a useful way to search specific metadata fields.
 
 Available collections:
 
 ```{r}
 collection_url = URLencode(paste0("https://api.govinfo.gov/collections?api_key=", apiGovKey))
 
-collections = flatten_dfc(fromJSON(collection_url))
+(collections = flatten_dfc(fromJSON(collection_url)))
 
-glimpse(collections)
 ```
 
 ## Published
@@ -53,7 +63,9 @@ glimpse(collections)
 - Congressional Bills
 - Congressional Bill Status
 
+API call format:
 
+https:// api.govinfo.gov/published/`dateIssuedStartDate`/`dateIssuedEndDate`?offset=`startingRecord`&pageSize=`number of records in call`&collection=`comma-separated list of values`&api_key=`your api.data.gov api key`
 
 ### Bill Status
 
@@ -62,9 +74,9 @@ Get a list of packages from the **Bill Status** collection which were issued in 
 ```{r}
 
 hr_117_bill_status = getPublished(dateIssuedStartDate = ymd("2020-01-01"),
-                           numRecords = 100,
-                           collections = "BILLSTATUS", congress = 117,
-                           docClass = "hr")
+                                  numRecords = 100,
+                                  collections = "BILLSTATUS", congress = 117,
+                                  docClass = "hr")
 glimpse(hr_117_bill_status)
 ```
 
