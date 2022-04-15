@@ -9,6 +9,9 @@ library(xml2)
 library(log4r)
 library(mokeR)
 
+
+# Logging functions -------------------------------------------------------
+
 log_layout = function(level, ...){
   function(level,
            ..., bill_type, bill_num){
@@ -53,6 +56,10 @@ read_log = function(log_file){
     ungroup() %>% 
     arrange(bill_type, bill_num, time)
 }
+
+
+# API functions -----------------------------------------------------------
+
 
 getPackages = function(packageId, summary = F, xml = T){
   summary_url = paste0("https://api.govinfo.gov/packages/", packageId, 
@@ -116,6 +123,11 @@ getPublished = function(dateIssuedStartDate, dateIssuedEndDate,
   packages
 }
 
+
+# Helper functions --------------------------------------------------------
+
+
+
 silent_convert = function(df, ...){
   suppressWarnings(suppressMessages(readr::type_convert(df, ...)))
 }
@@ -123,6 +135,11 @@ silent_convert = function(df, ...){
 flatten_rename = function(list_to_flatten, name_prefix = "prefix"){
   rename_with(flatten_dfc(list_to_flatten), ~str_c(name_prefix, "_", .))
 }
+
+
+# XML parsing functions ---------------------------------------------------
+
+
 
 parse_committee = function(committee){
   committee_tibbled = committee %>% 
