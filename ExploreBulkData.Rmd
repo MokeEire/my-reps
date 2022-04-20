@@ -138,28 +138,149 @@ sample_bill_df %>%
 Can we scale this up to see what actions are taken on house bills on a timeline?
 
 ```{r}
-(house_bills = map(house_bill_files, future_map_dfr, extract_bill_status))
+# tic()
+# (house_bills = future_map_dfr(flatten_chr(house_bill_files), extract_bill_status))
+# toc()
+# 
+# saveRDS(house_bills, here("data", "cleaned", "BILLSTATUS_117_House.Rds"))
 
-saveRDS(house_bills, here("data", "cleaned", "BILLSTATUS_117_House.Rds"))
-
-# house_bills = readRDS(here("data", "cleaned", "BILLSTATUS_117_House.Rds"))
+house_bills = readRDS(here("data", "cleaned", "BILLSTATUS_117_House.Rds"))
 ```
 
 ```{r}
-(house_bill_actions = map(house_bills, select, billType, billNumber, title, introducedDate, actions, action_counts) %>% 
+glimpse(house_bills$hr)
+```
+
+
+### Actions
+
+The actions tibbles are not necessarily structurally consistent.
+What fields are available and when?
+
+```{r}
+house_bills$hr %>% 
+  select(bill_id, actions) %>% 
+  mutate(actions_cols = map(actions, colnames)) %>% 
+  unnest(actions_cols) %>%
+  count(actions_cols, wt = n_distinct(bill_id), sort = T)
+```
+
+Committee information is missing for a very small number of cases and timing information is missing for the vast majority of actions.
+When is time information available?
+
+```{r}
+house_bills$hr %>% 
+  select(bill_id, actions) %>%
+  unnest(actions) %>% 
+  # Filter to rows with a time
+  filter(!is.na(actionTime)) %>% 
+  count(action_type, actionCode, sort = T)
+```
+
+
+First, we need to unnest the actions data and see what action-level information looks like.
+
+```{r}
+(actions_unnested = map(house_bills, select, where(negate(is_list)), starts_with("action")) %>% 
+   # Unnest actions
+  map_dfr(unnest, actions))
+```
+
+What actions are most common?
+
+```{r}
+actions_unnested %>% 
+  count(actionCode, sort = T)
+```
+
+
+How do action codes relate to action sources?
+
+```{r}
+actions_unnested %>% 
+  count(action_source_name, actionCode, str_trunc(action_text, 50), sort = T)
+```
+
+Is there a difference between the `actionCode` **1000** and **Intro-H**?
+
+```{r}
+actions_to_compare = c("1000", "Intro-H")
+
+actions_unnested %>% 
+  filter(actionCode %in% actions_to_compare)
+  
+```
+
+Do these two actions occur for every bill?
+
+```{r}
+actions_unnested %>% 
+  filter(actionCode %in% actions_to_compare) %>% 
+  count(actionCode)
+```
+
+No, **1000** occurs more often.
+
+```{r}
+actions_unnested %>% 
+  distinct(bill_id) %>% 
+  tally()
+```
+
+Does `Intro-H` only occur in cases where `1000` is present too?
+
+```{r}
+actions_unnested %>% 
+  group_by(bill_id) %>% 
+  filter(actionCode %in% actions_to_compare,
+         "Intro-H" %in% actionCode) %>% 
+  ungroup() %>% 
+  count(actionCode)
+```
+
+So effectively we can remove `Intro-H` actions.
+This reduces the size of the actions data by ~8,000 rows.
+
+```{r}
+actions_unnested %>% 
+  select(bill_id, title, introducedDate, 
+         actionDate, actionTime, action_type, actionCode, action_text,
+         starts_with("action_source"), starts_with("action_committee")) %>% 
+  filter(actionCode != "Intro-H"|is.na(actionCode)) %>% 
+  mutate(action_ts = make_datetime(year = year(actionDate), month = month(actionDate), day = day(actionDate), 
+                                   hour = coalesce(hour(actionTime), 0), 
+                                   min = coalesce(minute(actionTime), 0), 
+                                   sec = coalesce(second(actionTime), 0), 
+                                   tz = "US/Eastern"), .before = actionDate) %>% 
+   arrange(bill_id, action_ts)
+```
+
+
+```{r}
+(actions_dedupe = actions_unnested %>% 
+  filter(actionCode != "Intro-H"|is.na(actionCode)) %>% 
+   arrange(bill_id, action_type))
+```
+```{r}
+
+```
+
+
+```{r}
+# Reduce data down to bill-level attributes and the actions data
+(house_bill_actions = map(house_bills, select, where(negate(is_list)), starts_with("action")) %>% 
+   # Unnest actions
   map_dfr(unnest, actions) %>% 
+   distinct(bill_id, title, introducedDate, 
+           actionDate, actionTime, action_source_name, action_type, action_text, action_committee_name, .keep_all = T) %>% 
+   # Order bills and actions
   arrange(billType, billNumber, actionDate, actionTime) %>% 
-  select(billType, billNumber, title, introducedDate, action_counts, 
-         actionDate, actionTime, action_type, action_text, action_sourceSystem_name, actionCode, action_committee_name) %>% 
+   # Number actions
   group_by(billType, billNumber) %>% 
   mutate(action_number = row_number(),
          became_law = ("BecameLaw" %in% action_type), .after = actionTime) %>% 
   ungroup() %>% 
-  # Combine bill type and number to create an ID
-  unite(bill_id, billType, billNumber, sep = "-", remove = F) %>% 
-  mutate(action_ts = make_datetime(year = year(actionDate),
-                                   month = month(actionDate), 
-                                   day = day(actionDate), 
+  mutate(action_ts = make_datetime(year = year(actionDate), month = month(actionDate), day = day(actionDate), 
                                    hour = coalesce(hour(actionTime), 0), 
                                    min = coalesce(minute(actionTime), 0), 
                                    sec = coalesce(second(actionTime), 0), 
@@ -175,10 +296,22 @@ house_bill_actions %>%
 
 ```{r}
 house_bill_actions %>% 
-  filter(billType == "HR") %>% 
-  select(bill_id, title, became_law, action_sourceSystem_name, action_ts, action_type, actionCode, action_text) %>% 
-  mokeR::reactable(resizable = T, showPageSizeOptions = T, fullWidth = F, groupBy = "bill_id", style = list(fontSize = 14),
-      columns = list(action_text = colDef(width = 480))
+  filter(billType == "HR") %>% View()
+  # select(bill_id, title, became_law, action_source_name, action_ts, action_type, actionCode, action_text) %>% 
+  mokeR::reactable(
+    resizable = T, 
+    showPageSizeOptions = T, 
+    fullWidth = F, 
+    groupBy = "bill_id", 
+    style = list(fontSize = 14),
+    columns = list(
+      title = colDef(aggregate = "unique", width = 200),
+      action_ts = colDef(),
+      createDate = colDef(aggregate = "unique", format = colFormat(date = T)),
+      updateDate = colDef(aggregate = "unique", format = colFormat(date = T)),
+      action_text = colDef(width = 980),
+      became_law = colDef(aggregate = "unique")
+      )
   )
 ```
 
