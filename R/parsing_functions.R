@@ -254,6 +254,20 @@ xml_nonempty_nodes = function(xml_node){
     keep(~(xml_text(.) != ""))
 }
 
+# attribute_tibble_templates = list(
+#   actions = tibble(
+#     actionDate = col_date(), 
+#     actionTime = col_time(),
+#     action_committee_systemCode = col_character(), 
+#     action_committee_name = col_character(), 
+#     action_source_code = col_character(),
+#     action_source_name = col_character(),
+#     action_text = col_character(), 
+#     action_type = col_character(), 
+#     actionCode = col_character()
+#   )
+# )
+
 attribute_col_types = list(
   actions = cols(actionDate = col_date(), 
                  actionTime = col_time(),
