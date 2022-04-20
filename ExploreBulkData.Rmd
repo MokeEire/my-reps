@@ -76,19 +76,26 @@ glimpse(sample_bill_df)
 
 
 ```{r}
-select(sample_bill_df, where(negate(is_list)),
+select(sample_bill_df, 
+       createDate, bill_id, introducedDate, title, where(negate(is_list)),
        -constitutionalAuthorityStatementText) %>% 
   reactable(
     columns = list(
-      congress = colDef(width = 60),
-      billType = colDef(name = "Bill Type", width = 50),
-      billNumber = colDef(name = "Bill #", width = 40),
-      title = colDef(name = "Bill Title", width = 160),
-      createDate = colDef(name = "Created", format = colFormat(date = T, locales = "en-GB")),
-      latestAction_actionDate = colDef(name = "Latest Action Date", format = colFormat(date = T, locales = "en-GB")),
-      latestAction_text = colDef(name = "Latest Action", width = 160),
-      updateDate = colDef(name = "Updated", format = colFormat(date = T, locales = "en-GB")),
-      introducedDate = colDef(name = "Introduced", format = colFormat(date = T, locales = "en-GB"))
+      originChamber = colDef(name = "Chamber of Origin", width = 80),
+      bill_id = colDef(name = "ID", width = 70),
+      congress = colDef(show = F, width = 60),
+      billType = colDef(show = F,name = "Bill Type", width = 50),
+      billNumber = colDef(show = F,name = "Bill #", width = 40),
+      title = colDef(name = "Bill Title", width = 420),
+      createDate = colDef(name = "Created", width = 80, format = colFormat(date = T, locales = "en-GB")),
+      latestAction_actionDate = colDef(name = "Date", width = 80, format = colFormat(date = T, locales = "en-GB")),
+      latestAction_text = colDef(name = "Action", width = 320),
+      version = colDef(show=F),
+      updateDate = colDef(name = "Updated", width = 80, format = colFormat(date = T, locales = "en-GB")),
+      introducedDate = colDef(name = "Introduced", width = 80, format = colFormat(date = T, locales = "en-GB"))
+    ),
+    columnGroups = list(
+      colGroup(name = "Latest Action", columns = c("latestAction_actionDate", "latestAction_text"))
     )
   )
 ```
