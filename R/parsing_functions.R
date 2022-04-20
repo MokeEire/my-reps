@@ -292,8 +292,6 @@ count_attr_colnames = function(xml_file, attribute = "actions"){
 }
 
 extract_bill_status = function(xml_file, 
-                               base_attributes = c("congress", "originChamber", "billType", "billNumber", "title", 
-                                                   "introducedDate","createDate", "updateDate", "policyArea"),
                                nested_attributes = c("committees", "votes", "actions", "sponsors", "cosponsors"),
                                col_specs = attribute_col_types){
   logger = create_logger()
@@ -307,7 +305,7 @@ extract_bill_status = function(xml_file,
   bill_df = map_dfc(singletons , xml_text) %>% 
     set_names(xml_name(singletons))
 
-  # Extract non-singular base attributes
+  # Extract non-singular base attributes ----
   ## Policy area
   policy_areas = xml_find_all(bill_xml, "policyArea/name") %>% 
     as_list() %>% 
@@ -423,9 +421,10 @@ extract_bill_status = function(xml_file,
     
     # Coerce nodes to list
     actions_df = as_list(bill_actions) %>% 
-      map_dfr(parse_action)
+      map_dfr(parse_action) %>% 
+      type_convert(col_types = col_specs$actions)
     
-    bill_df$actions = list(type_convert(actions_df, col_types = col_specs$actions))
+    bill_df$actions = list(actions_df)
     
     bill_df$action_counts = list(type_convert(bill_action_counts,
                                               col_types = cols(action = col_character(), count = col_integer())))
