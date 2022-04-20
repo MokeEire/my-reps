@@ -76,7 +76,8 @@ glimpse(sample_bill_df)
 
 
 ```{r}
-select(sample_bill_df, where(negate(is_list))) %>% 
+select(sample_bill_df, where(negate(is_list)),
+       -constitutionalAuthorityStatementText) %>% 
   reactable(
     columns = list(
       congress = colDef(width = 60),
