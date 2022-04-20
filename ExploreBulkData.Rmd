@@ -73,11 +73,11 @@ sample_bill_df = future_map_dfr(sample_bill_file, extract_bill_status)
 glimpse(sample_bill_df)
 
 ```
-
+View the bill in a table (Note I have a personal preference for the date format `dd/mm/yyyy` so that is what is used here)
 
 ```{r}
 select(sample_bill_df, 
-       createDate, bill_id, introducedDate, title, where(negate(is_list)),
+       title, bill_id, createDate, introducedDate, where(negate(is_list)),
        -constitutionalAuthorityStatementText) %>% 
   reactable(
     columns = list(
@@ -99,41 +99,54 @@ select(sample_bill_df,
     )
   )
 ```
+
+
 ### Actions
 
-What actions were are taken on a bill?
+What actions are taken on a bill?
 After a bill is introduced, how do members of congress interact with it? 
 
+To answer questions like these, we need to `unnest()` the `actions` column.
 
 ```{r}
-sample_bill_df %>% 
-  select(where(negate(is_list)), actions) %>% 
+(sample_actions = sample_bill_df %>% 
+  select(billType, billNumber, bill_id, title, createDate, updateDate, title,
+         -where(is_list), actions) %>%
   unnest(actions) %>% 
-  nest(action_codes = c(actionCode, action_sourceSystem_code, action_sourceSystem_name)) %>% 
-  mutate(action_n = map_dbl(action_codes, nrow))
+   # Order bills and actions
+  arrange(billType, billNumber, actionDate))
 ```
 
 
 ```{r}
-sample_bill_df %>% 
-  select(billType, billNumber, title, introducedDate, where(is_list)) %>%
-  unnest(actions) %>% 
-  # Combine bill type and number to create an ID
-  unite(bill_id, billType, billNumber, sep = "-", remove = F) %>% 
+sample_actions %>% 
   # Sort cols and rows
-  select(bill_id, billType:introducedDate, action_type, actionDate, action_text, action_committee_name, action_sourceSystem_name) %>% 
+  select(bill_id, billType, billNumber, action_type, actionDate, action_text, action_committee_name, action_source_name) %>%
   arrange(billType, billNumber, actionDate, action_type) %>% 
   # Plot
   ggplot(., aes(x = actionDate))+
   # Line connecting points
-  geom_line(aes(y = ..count.., group = bill_id), stat = "count", size = .7)+
+  geom_line(aes(y = ..count.., group = bill_id), stat = "count", size = .8, alpha = .8)+
   # Points using the count of each action type on a given date
   geom_point(aes(colour = action_type, size = ..count..), stat = "count")+
-  labs(title = "Bill actions over time")+
+  labs(title = "Bill actions over time", 
+       x = "Action Date", y = "# of actions")+
+  scale_colour_manual(name = "Action", values = viz_colours[1:length(unique(sample_actions$action_type))])+
+  scale_size(guide = "none", range = c(2,7))+
   theme_mark(plots_pane = T)
 ```
 
-## House bills
+However, it looks like we will need to clean the actions because there appears to be a lot of duplicate `IntroReferral` actions.
+We'll take a look at this
+
+```{r}
+sample_actions %>% 
+  filter(action_type == "IntroReferral") %>% 
+  select(bill_id, title, actionDate, action_type, actionCode, action_text, action_source_name, action_committee_name)
+```
+
+
+## All House bills
 
 Can we scale this up to see what actions are taken on house bills on a timeline?
 
@@ -146,6 +159,8 @@ Can we scale this up to see what actions are taken on house bills on a timeline?
 
 house_bills = readRDS(here("data", "cleaned", "BILLSTATUS_117_House.Rds"))
 ```
+
+What does this data look like?
 
 ```{r}
 glimpse(house_bills$hr)
