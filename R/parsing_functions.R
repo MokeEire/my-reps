@@ -380,7 +380,7 @@ extract_bill_status = function(xml_file,
 
     committees = xml_find_all(bill_committees, "item")
     # Coerce nodes to list
-    committees_list = map(committees, as_list)
+    committees_list = as_list(committees)
     
     committees_df = map_dfr(committees_list, parse_committee)
     
