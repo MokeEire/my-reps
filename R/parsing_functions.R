@@ -154,7 +154,8 @@ silent_convert = function(df, ...){
   suppressWarnings(suppressMessages(readr::type_convert(df, ...)))
 }
 
-flatten_rename = function(list_to_flatten, name_prefix = "prefix"){
+flatten_rename = function(list_to_flatten, 
+                          name_prefix = "prefix"){
   rename_with(flatten_dfc(list_to_flatten), ~str_c(name_prefix, "_", .))
 }
 
