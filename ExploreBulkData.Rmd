@@ -5,13 +5,16 @@ output:
     df_print: paged
 ---
 
-An overarching goal of the exploration is to create an app which provides people with a clearer view of who their representatives are and what they are doing.
-I think the ideal solution combines Datamade's [beautifully simple representative finder](https://myreps.datamade.us/) and Project Vote Smart's [vast collection of data on legislator activities](https://justfacts.votesmart.org/).
+The goal of exploring legislative data is to provides citizens with a clearer view of who their representatives are and what they are doing.
+An ideal solution combines Datamade's [beautifully simple representative finder](https://myreps.datamade.us/) and Project Vote Smart's [vast collection of data on legislator activities](https://justfacts.votesmart.org/).
 
-Other avenues of inquiry that have come to mind:
+Other questions worth investigating:
 
-- examine how long bills typically take to become law, which parts of the process are the most time-intensive, and which decision-makers are acting in each stage?
-- map the legislative process for bills and get a sense for how legislator behaviour affects a bill's likelihood of being considered, its content, and the eventual outcome
+- how long does it take for a bill to become law?
+- which legislative processes are the most time-intensive?
+- which decision-makers are acting in each stage?
+- what legislative paths can a bill take?
+map the legislative process for bills and get a sense for how legislator behaviour affects a bill's likelihood of being considered, its content, and the eventual outcome
 - Make a sankey diagram depicting how bills flow through congress
 
 It might be worth reaching out to: https://github.com/unitedstates/congress
@@ -24,6 +27,8 @@ library(here)
 library(reactable)
 plan(multisession)
 source("R/parsing_functions.R")
+
+action_codes = read_csv(here("data", "action_codes.csv"), col_types = "cc")
 ```
 
 I have downloaded all the different bill types for the 117th congress from https://www.govinfo.gov/bulkdata/BILLSTATUS/117/.
@@ -50,7 +55,7 @@ house_bill_files = map(house_bill_folders, list.files, full.names = T) %>%
 ```
 
 Let's check how many bill XML files are in each folder.
-It seems house-originated bills (H.R.) are by far the most common, while simple resolutions (H. Res.) are the second most common.
+House-originated bills (H.R.) are by far the most common, while simple resolutions (H. Res.) are the second most common.
 Joint resolutions (H.J. Res.) and concurrent resolutions are introduced much less frequently.
 
 ```{r}
@@ -116,7 +121,7 @@ To answer questions like these, we need to `unnest()` the `actions` column.
    # Order bills and actions
   arrange(billType, billNumber, actionDate))
 ```
-
+Let's visualize what this timeline might look like, counting the number of each type of action taken.
 
 ```{r}
 sample_actions %>% 
@@ -133,7 +138,7 @@ sample_actions %>%
        x = "Action Date", y = "# of actions")+
   scale_colour_manual(name = "Action", values = viz_colours[1:length(unique(sample_actions$action_type))])+
   scale_size(guide = "none", range = c(2,7))+
-  theme_mark(plots_pane = T)
+  theme_moke(plots_pane = T)
 ```
 
 However, it looks like we will need to clean the actions because there appears to be a lot of duplicate `IntroReferral` actions.
@@ -170,13 +175,15 @@ glimpse(house_bills$hr)
 ### Actions
 
 The actions tibbles are not necessarily structurally consistent.
-What fields are available and when?
+What fields are present and when?
 
 ```{r}
 house_bills$hr %>% 
   select(bill_id, actions) %>% 
+  # Create a list of field names for each actions dataframe
   mutate(actions_cols = map(actions, colnames)) %>% 
   unnest(actions_cols) %>%
+  # Count the number of bills the field is available for
   count(actions_cols, wt = n_distinct(bill_id), sort = T)
 ```
 
@@ -184,16 +191,15 @@ Committee information is missing for a very small number of cases and timing inf
 When is time information available?
 
 ```{r}
-house_bills$hr %>% 
+bind_rows(house_bills) %>% 
   select(bill_id, actions) %>%
   unnest(actions) %>% 
   # Filter to rows with a time
   filter(!is.na(actionTime)) %>% 
-  count(action_type, actionCode, sort = T)
+  count(action_type, sort = T)
 ```
 
-
-First, we need to unnest the actions data and see what action-level information looks like.
+Now, let's `unnest()` the actions data and see what action-level information looks like.
 
 ```{r}
 (actions_unnested = map(house_bills, select, where(negate(is_list)), starts_with("action")) %>% 
@@ -201,11 +207,62 @@ First, we need to unnest the actions data and see what action-level information 
   map_dfr(unnest, actions))
 ```
 
-What actions are most common?
+
+What action types are most common?
+
+```{r}
+actions_unnested %>%
+  count(billType, action_type) %>% 
+  arrange(billType, desc(n))
+```
+Or in a graph:
+
+```{r}
+actions_unnested %>%
+  count(billType, action_type) %>% 
+  arrange(billType, desc(n)) %>% 
+  ggplot(., aes(x = action_type, y = n, fill = action_type))+
+  geom_col()+
+  scale_y_continuous(labels = scales::comma)+
+  scale_fill_manual(name = "Action", 
+                    values = viz_colours[1:length(unique(actions_unnested$action_type))])+
+  facet_wrap(~billType, scales = "free_y")+
+  theme_mark(plots_pane = T)+
+  theme(axis.text.x = element_blank())
+```
+What about action codes?
 
 ```{r}
 actions_unnested %>% 
-  count(actionCode, sort = T)
+  left_join(action_codes, by = c("actionCode" = "Code")) %>% 
+  select(bill_id, actionDate, actionTime, action_type, actionCode, Action) %>% 
+  count(actionCode, Action, sort = T)
+```
+
+
+```{r}
+actions_unnested %>% 
+  left_join(action_codes, by = c("actionCode" = "Code")) %>% 
+  group_by(bill_id) %>%
+  summarise(
+    actions = n(),
+    actions_w_code = sum(!is.na(Action)),
+    actions_coded = actions_w_code/actions
+  ) %>% 
+  ggplot(., aes(x = actions_coded))+
+  geom_histogram()+
+  scale_x_continuous(labels = scales::percent)+
+  scale_y_continuous(labels = scales::comma, expand = expansion())+
+  theme_mark(plots_pane = T)
+```
+
+How do actions with actionCodes listed on congress.gov differ from those which are not?
+
+```{r}
+actions_unnested %>% 
+  filter(bill_id == sample(bill_id, 1)) %>% 
+  left_join(action_codes, by = c("actionCode" = "Code")) %>% 
+  select(bill_id, actionDate, actionTime, action_type, actionCode, Action, action_text, starts_with("action"))
 ```
 
 
@@ -236,12 +293,6 @@ actions_unnested %>%
 
 No, **1000** occurs more often.
 
-```{r}
-actions_unnested %>% 
-  distinct(bill_id) %>% 
-  tally()
-```
-
 Does `Intro-H` only occur in cases where `1000` is present too?
 
 ```{r}
@@ -271,35 +322,27 @@ actions_unnested %>%
 ```
 
 
-```{r}
-(actions_dedupe = actions_unnested %>% 
-  filter(actionCode != "Intro-H"|is.na(actionCode)) %>% 
-   arrange(bill_id, action_type))
-```
-```{r}
-
-```
-
 
 ```{r}
 # Reduce data down to bill-level attributes and the actions data
 (house_bill_actions = map(house_bills, select, where(negate(is_list)), starts_with("action")) %>% 
    # Unnest actions
   map_dfr(unnest, actions) %>% 
-   distinct(bill_id, title, introducedDate, 
-           actionDate, actionTime, action_source_name, action_type, action_text, action_committee_name, .keep_all = T) %>% 
-   # Order bills and actions
-  arrange(billType, billNumber, actionDate, actionTime) %>% 
-   # Number actions
-  group_by(billType, billNumber) %>% 
-  mutate(action_number = row_number(),
-         became_law = ("BecameLaw" %in% action_type), .after = actionTime) %>% 
-  ungroup() %>% 
+   # Remove Intro-H actions
+   filter(actionCode != "Intro-H"|is.na(actionCode)) %>% 
   mutate(action_ts = make_datetime(year = year(actionDate), month = month(actionDate), day = day(actionDate), 
                                    hour = coalesce(hour(actionTime), 0), 
                                    min = coalesce(minute(actionTime), 0), 
                                    sec = coalesce(second(actionTime), 0), 
-                                   tz = "US/Eastern"))) %>% 
+                                   tz = "US/Eastern")) %>% 
+   left_join(action_codes, by = c("actionCode" = "Code")) %>% 
+   # Order bills and actions
+  arrange(billType, billNumber, action_ts) %>% 
+   # Number actions
+  group_by(billType, billNumber) %>% 
+  mutate(action_number = row_number(),
+         became_law = ("BecameLaw" %in% action_type), .after = actionTime) %>% 
+  ungroup()) %>% 
   glimpse()
 ```
 
@@ -308,28 +351,7 @@ house_bill_actions %>%
   count(action_type, sort = T)
 ```
 
-
-```{r}
-house_bill_actions %>% 
-  filter(billType == "HR") %>% View()
-  # select(bill_id, title, became_law, action_source_name, action_ts, action_type, actionCode, action_text) %>% 
-  mokeR::reactable(
-    resizable = T, 
-    showPageSizeOptions = T, 
-    fullWidth = F, 
-    groupBy = "bill_id", 
-    style = list(fontSize = 14),
-    columns = list(
-      title = colDef(aggregate = "unique", width = 200),
-      action_ts = colDef(),
-      createDate = colDef(aggregate = "unique", format = colFormat(date = T)),
-      updateDate = colDef(aggregate = "unique", format = colFormat(date = T)),
-      action_text = colDef(width = 980),
-      became_law = colDef(aggregate = "unique")
-      )
-  )
-```
-
+View number of actions taken on a bill by whether or not they became law
 
 ```{r}
 house_bill_actions %>% 
@@ -337,36 +359,74 @@ house_bill_actions %>%
   mutate(became_law = ("BecameLaw" %in% action_type)) %>% 
   ggplot(., aes(x = action_ts, y = action_number))+
   geom_line(aes(group = bill_id, colour = became_law))+
-  facet_wrap(~billType, scales = "free_y")
+  facet_wrap(~billType, scales = "free_y")+
+  theme_mark(plots_pane = T)
+```
+
+
+Can we get an idea of the order of actions based on their average position in the data?
+
+```{r}
+(action_order_summary = house_bill_actions %>% 
+  group_by(action_type) %>% 
+  summarise(across(action_number, list(min = min, 
+                                       y25 = ~quantile(., .25), 
+                                       mean = mean, median = median, 
+                                       y75 = ~quantile(., .75),
+                                       max = max), na.rm=T)))
 ```
 
 ```{r}
-house_bill_actions %>% 
-  count(billType, action_type, wt = n_distinct(bill_id)) %>% 
-  arrange(billType, desc(n))
+action_order_summary %>%
+  pivot_longer(cols = starts_with("action_n"), names_to = "measure", values_to = "value",
+               names_transform = list(measure = ~str_remove_all(., "^action_number_")))
+
+action_order_summary %>% 
+  arrange(action_number_mean) %>% 
+  mutate(action_type = fct_inorder(factor(action_type))) %>% 
+  ggplot(., aes(x = action_type))+
+  geom_boxplot(
+    aes(ymin = action_number_min, 
+        lower = action_number_y25, middle = action_number_median, upper = action_number_y75,
+        ymax = action_number_max),
+    stat = "identity"
+  )+
+  theme_mark(plots_pane = T)+
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
 ```
-What does calendars mean as an action?
-
-```{r}
-house_bill_actions %>% 
-  filter(action_type == "Calendars") %>% 
-  distinct(action_type, action_text)
-```
-
-
-Can we get an idea of the order of actions based on their average position in the order?
 
 ```{r}
 house_bill_actions %>% 
   group_by(action_type) %>% 
-  summarise(across(action_number, list(min = min, mean = mean, median = median, max = max)))
+  mutate(mean_num = mean(action_number)) %>% 
+  ungroup() %>% 
+  arrange(mean_num) %>% 
+  mutate(action_type = fct_inorder(factor(action_type))) %>% 
+  ggplot(., aes(x = action_type, y = action_number))+
+  geom_boxplot()+
+  labs(title = "In what order do actions typically occur?", x = NULL)+
+  theme_mark(plots_pane = T)
+
 ```
 
 ```{r}
 house_bill_actions %>% 
-  ggplot(., aes(x = action_number))+
-  geom_histogram(aes(group = action_type, fill = action_type))
+  filter(bill_id == sample(bill_id, 1)) -> sample_bill_actions
+
+sample_bill_actions %>% 
+  # Plot
+  ggplot(., aes(x = actionDate))+
+  # Line connecting points
+  geom_line(aes(y = ..count.., group = bill_id), stat = "count", size = .8, alpha = .8)+
+  # Points using the count of each action type on a given date
+  geom_point(aes(colour = action_type, size = ..count..), stat = "count")+
+  labs(title = "Bill actions over time", 
+       x = "Action Date", y = "# of actions")+
+  scale_size(guide = "none", range = c(2,7))+
+  theme_mark(plots_pane = T)
 ```
+
+
 
 
 Let's look only at those bills that became law
@@ -382,6 +442,8 @@ house_bill_actions %>%
   geom_line(aes(group = bill_id))+
   facet_wrap(~billType, scales = "free_y")
 ```
+
+
 ```{r}
 house_bill_actions %>% 
   # Combine bill type and number to create an ID

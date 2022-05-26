@@ -113,8 +113,23 @@ We can get the summary using:
 Or for all packages?
 
 ```{r}
-
+tic()
+map_chr(hr_117_bill_status$packageId[1:10], get_package_xml) %>% 
+  future_map_dfr(extract_bill_status)
+toc()
 ```
+
+Check if map or map_chr is faster
+
+```{r}
+tic("map")
+map(hr_117_bill_status$packageId[1:10], get_package_xml)
+toc()
+tic("map_chr")
+map_chr(hr_117_bill_status$packageId[1:10], get_package_xml)
+toc()
+```
+
 
 ### What's in the XML?
 
@@ -369,11 +384,16 @@ house_117_files = list.files(here("data", "BILLSTATUS","117", house_bill_types),
 
 ```
 
+```{r}
+future_map_dfr(sample(house_117_files, 1), extract_bill_status)
+```
+
+
 Using {furrr} has some benefits here
 
 ```{r}
 # How many bills to sample?
-n_sample = 100
+n_sample = 1000
 house_sample = sample(house_117_files, n_sample)
 
 tic(paste("Extracting", n_sample, "files"))
@@ -384,7 +404,7 @@ toc()
 Confirm that there is one bill number per row?
 
 ```{r}
-add_count(house_117_df, billNumber, name = "rows_per_bill") %>% 
+add_count(house_117_df, billType, billNumber, name = "rows_per_bill") %>% 
   count(rows_per_bill)
 ```
 
