@@ -175,7 +175,7 @@ parse_committee = function(committee){
       map_dfr(subcommittee, parse_subcommittee)
     })
   
-  committee_df = keep(committee_tibbled, negate(is_tibble)) %>% 
+  committee_df = discard(committee_tibbled, is_tibble) %>% 
     flatten_dfc() %>% 
     rename_with(.fn = ~str_c("committee_", .)) %>% 
     mutate(committee_activities = list(committee_tibbled$activities),
