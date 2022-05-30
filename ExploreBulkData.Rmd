@@ -28,7 +28,7 @@ library(reactable)
 plan(multisession)
 source("R/parsing_functions.R")
 
-action_codes = read_csv(here("data", "action_codes.csv"), col_types = "cc")
+# action_codes = read_csv(here("data", "action_codes.csv"), col_types = "cc")
 ```
 
 I have downloaded all the different bill types for the 117th congress from https://www.govinfo.gov/bulkdata/BILLSTATUS/117/.
@@ -72,12 +72,14 @@ What does the data look like for a single bill?
 sample_bill_file = sample(house_bill_files$hr, 1)
 
 # Extract the bill status data
-sample_bill_df = future_map_dfr(sample_bill_file, extract_bill_status)
+sample_bill_df = extract_bill_status(sample_bill_file)
+
 
 # View the bill's contents
 glimpse(sample_bill_df)
 
 ```
+
 View the bill in a table (Note I have a personal preference for the date format `dd/mm/yyyy` so that is what is used here)
 
 ```{r}
@@ -92,15 +94,20 @@ select(sample_bill_df,
       billType = colDef(show = F,name = "Bill Type", width = 50),
       billNumber = colDef(show = F,name = "Bill #", width = 40),
       title = colDef(name = "Bill Title", width = 420),
-      createDate = colDef(name = "Created", width = 80, format = colFormat(date = T, locales = "en-GB")),
-      latestAction_actionDate = colDef(name = "Date", width = 80, format = colFormat(date = T, locales = "en-GB")),
+      createDate = colDef(name = "Created", width = 80, 
+                          format = colFormat(date = T, locales = "en-GB")),
+      latestAction_actionDate = colDef(name = "Date", width = 80, 
+                                       format = colFormat(date = T, locales = "en-GB")),
       latestAction_text = colDef(name = "Action", width = 320),
       version = colDef(show=F),
-      updateDate = colDef(name = "Updated", width = 80, format = colFormat(date = T, locales = "en-GB")),
-      introducedDate = colDef(name = "Introduced", width = 80, format = colFormat(date = T, locales = "en-GB"))
+      updateDate = colDef(name = "Updated", width = 80, 
+                          format = colFormat(date = T, locales = "en-GB")),
+      introducedDate = colDef(name = "Introduced", width = 80, 
+                              format = colFormat(date = T, locales = "en-GB"))
     ),
     columnGroups = list(
-      colGroup(name = "Latest Action", columns = c("latestAction_actionDate", "latestAction_text"))
+      colGroup(name = "Latest Action", 
+               columns = c("latestAction_actionDate", "latestAction_text"))
     )
   )
 ```
@@ -121,6 +128,7 @@ To answer questions like these, we need to `unnest()` the `actions` column.
    # Order bills and actions
   arrange(billType, billNumber, actionDate))
 ```
+
 Let's visualize what this timeline might look like, counting the number of each type of action taken.
 
 ```{r}
@@ -151,18 +159,34 @@ sample_actions %>%
 ```
 
 
-## All House bills
+## Create House bills dataset
+
+Let's start with the bill type that has the fewest bills to see how long it takes to parse
+
+```{r}
+tic()
+(hjres_bills = house_bill_files$hjres %>% 
+  future_map_dfr(extract_bill_status))
+toc()
+```
+
+```{r}
+tic()
+(hres_bills = house_bill_files$hres %>% 
+  future_map_dfr(extract_bill_status))
+toc()
+```
 
 Can we scale this up to see what actions are taken on house bills on a timeline?
 
 ```{r}
-# tic()
-# (house_bills = future_map_dfr(flatten_chr(house_bill_files), extract_bill_status))
-# toc()
-# 
-# saveRDS(house_bills, here("data", "cleaned", "BILLSTATUS_117_House.Rds"))
+tic()
+(house_bills = future_map_dfr(flatten_chr(house_bill_files), extract_bill_status))
+toc()
 
-house_bills = readRDS(here("data", "cleaned", "BILLSTATUS_117_House.Rds"))
+saveRDS(house_bills, here("data", "cleaned", "BILLSTATUS_117_House.Rds"))
+
+# house_bills = readRDS(here("data", "cleaned", "BILLSTATUS_117_House.Rds"))
 ```
 
 What does this data look like?
