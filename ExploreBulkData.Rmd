@@ -28,7 +28,7 @@ library(reactable)
 plan(multisession)
 source("R/parsing_functions.R")
 
-action_codes = read_csv(here("data", "action_codes.csv"), col_types = "cc")
+# action_codes = read_csv(here("data", "action_codes.csv"), col_types = "cc")
 ```
 
 I have downloaded all the different bill types for the 117th congress from https://www.govinfo.gov/bulkdata/BILLSTATUS/117/.
@@ -76,7 +76,6 @@ sample_bill_file = sample(house_bill_files$hr, 1)
 sample_bill_df = extract_bill_status(sample_bill_file, 
                                      get_votes = F,
                                      log_types = "console")
-
 
 # View the bill's contents
 glimpse(sample_bill_df)
@@ -183,10 +182,6 @@ tic()
                                                     "Discharge", "President", "BecameLaw"), 
                                          ordered = T))
       ))
-toc()
-```
-
-```{r}
 glimpse(hr_bills)
 ```
 
@@ -340,7 +335,6 @@ tic()
 toc()
 
 saveRDS(house_bills, here("data", "cleaned", "BILLSTATUS_117_House.Rds"))
-
 # house_bills = readRDS(here("data", "cleaned", "BILLSTATUS_117_House.Rds"))
 ```
 
