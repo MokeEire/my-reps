@@ -23,15 +23,34 @@ log_layout = function(level, ...){
   }
 }
 
-create_logger = function(directory = here::here("logs")){
-  log_file = here::here(here::here("logs"), paste0("log-", format(lubridate::now(), "%Y-%m-%d--%H-%M-%S"), ".txt"))
-  file.create(log_file)
+create_logger = function(log_threshold = "INFO", 
+                         directory = here::here("logs"), 
+                         log_types = c("file", "console")){
+  
+  log_appenders = list()
+  if("file" %in% log_types){
+    log_file = here::here(here::here("logs"), 
+                          paste0("log-", 
+                                 format(lubridate::now(), 
+                                        "%Y-%m-%d--%H-%M-%S"), 
+                                 ".txt"))
+    
+    file.create(log_file)
+    
+    log_appenders = append(
+      log_appenders, 
+      log4r::file_appender(log_file, append = T, layout = log_layout()))
+  }
+  
+  if("console" %in% log_types){
+    
+    log_appenders = append(log_appenders, 
+                           log4r::console_appender(layout = log_layout()))
+  }
   
   log4r::logger(
-    appenders = list(
-      log4r::file_appender(log_file, append = T, layout = log_layout()),
-      log4r::console_appender(layout = log_layout())
-    )
+    threshold = log_threshold,
+    appenders = log_appenders
   )
 }
 
@@ -40,6 +59,14 @@ log_info = function(logger, ...){
     return(invisible(NULL))
   for (appender in logger$appenders){
     appender(level="INFO", ...)
+  }
+}
+
+log_debug = function(logger, ...){
+  if(logger$threshold > log4r:::DEBUG)
+    return(invisible(NULL))
+  for (appender in logger$appenders){
+    appender(level="DEBUG", ...)
   }
 }
 
