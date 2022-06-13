@@ -72,12 +72,16 @@ What does the data look like for a single bill?
 sample_bill_file = sample(house_bill_files$hr, 1)
 
 # Extract the bill status data
-sample_bill_df = future_map_dfr(sample_bill_file, extract_bill_status)
+sample_bill_df = extract_bill_status(sample_bill_file, 
+                                     get_votes = F,
+                                     log_types = "console")
+
 
 # View the bill's contents
 glimpse(sample_bill_df)
 
 ```
+
 View the bill in a table (Note I have a personal preference for the date format `dd/mm/yyyy` so that is what is used here)
 
 ```{r}
@@ -118,9 +122,14 @@ To answer questions like these, we need to `unnest()` the `actions` column.
   select(billType, billNumber, bill_id, title, createDate, updateDate, title,
          -where(is_list), actions) %>%
   unnest(actions) %>% 
+   select(action_type, actionCode, action_text, any_of(c("actionDate", "actionTime")), 
+         action_source_name, action_source_code,
+         action_committee_name, action_committee_systemCode,
+         everything()) %>% 
    # Order bills and actions
   arrange(billType, billNumber, actionDate))
 ```
+
 Let's visualize what this timeline might look like, counting the number of each type of action taken.
 
 ```{r}
@@ -151,18 +160,182 @@ sample_actions %>%
 ```
 
 
-## All House bills
+## Create House bills dataset
+
+Extract bill data for a sample of house bills
+
+```{r}
+hr_sample = sample(house_bill_files$hr, 1000)
+tic()
+(hr_bills = house_bill_files$hr %>% 
+  future_map_dfr(extract_bill_status, get_votes = F, log_types = "console") %>% 
+    mutate(
+      across(ends_with("Date"), as_datetime),
+      actions = map(actions, mutate, 
+                    action_type = factor(action_type, 
+                                         levels = c("IntroReferral", "Committee", "Floor", 
+                                                    "Discharge", "President", "BecameLaw"), 
+                                         ordered = T))
+      ))
+toc()
+```
+
+```{r}
+glimpse(hr_bills)
+```
+
+
+When are these bills created/updated?
+
+```{r}
+hr_bills %>% 
+  # Calculate summary stats for each date var
+  summarise(
+    across(c(createDate, updateDate),
+           .fns = list(min = min, mean = mean, max = max, median = median), 
+           na.rm=T, .names = "{.fn}_{.col}")
+  ) %>% 
+  # pivot for table
+  pivot_longer(
+    everything(),
+    names_to = c("type", ".value"),
+    names_sep = "_",
+    values_to = "stat"
+    )
+```
+
+What does this look like on a histogram?
+
+```{r}
+hr_bills %>% 
+  select(bill_id, ends_with("Date")) %>% 
+  pivot_longer(
+    cols = ends_with("Date"), 
+    names_to = "type", 
+    values_to = "time", 
+    names_transform = list(type = ~str_replace_all(., c("Date" = "", "(?=_).+" = "")))) %>% 
+  mutate(date = as.Date(time)) %>% 
+  ggplot(., aes(x = date, fill = type))+
+  geom_histogram(alpha = .8,
+                 binwidth = 14, position = position_identity())+
+  facet_wrap(~type)+
+  theme_moke(plots_pane = T, title_family = NULL, subtitle_family = NULL, text_family = NULL)
+```
+What policy areas are present:
+
+```{r}
+(hr_policy_areas = hr_bills %>% 
+  unnest(policy_areas, keep_empty = T)) %>% 
+  count(policy_areas, sort = T)
+```
+
+What about the different legislative subjects?
+
+```{r}
+(hr_legislative_subjects = hr_policy_areas %>% 
+  unnest(legislative_subjects, keep_empty = T)) %>% 
+  count(legislative_subjects, sort = T)
+```
+
+
+```{r}
+hr_legislative_subjects %>% 
+  add_count(policy_areas, name = "policy_area_count", wt = n_distinct(bill_id)) %>% 
+  count(policy_areas, legislative_subjects, policy_area_count) %>% 
+  arrange(-policy_area_count, -n)
+```
+
+Look at Government Operations and Politics legislation
+
+```{r}
+(gov_ops_bills = hr_legislative_subjects %>% 
+  # filter("Government Operations and Politics" %in% policy_areas)) # if single row per bill
+   filter(policy_areas == "Government Operations and Politics"))
+```
+
+```{r}
+gov_ops_bills %>% 
+  select(bill_id, ends_with("Date"), legislative_subjects) %>% 
+  add_count(legislative_subjects, wt = n_distinct(bill_id)) %>% 
+  filter(n > 100) %>% 
+  pivot_longer(
+    cols = ends_with("Date"), 
+    names_to = "type", 
+    values_to = "time", 
+    names_transform = list(type = ~str_replace_all(., c("Date" = "", "(?=_).+" = "")))) %>% 
+  mutate(date = as.Date(time)) %>% 
+  ggplot(., aes(x = time, y = bill_id))+
+  # Line for each bill, point for each date
+  geom_line(size = 1)+
+  geom_point(aes(colour = type), size = 3.5, alpha = .8)+
+  # Axes
+  scale_x_datetime(name = NULL, labels = scales::label_date_short())+
+  scale_y_discrete(name = NULL, position = "right")+
+  scale_colour_manual(name = "Date", values = viz_colours[1:4])+
+  # Facet by legislative subject
+  facet_wrap(~legislative_subjects, scales = "free_y", ncol = 1, 
+             strip.position = "left")+
+  # Theming
+  theme_moke(plots_pane = T, text_family = NULL, title_family = NULL, subtitle_family = NULL)+
+  theme(panel.grid.major.y = element_blank(),
+        panel.grid.major.x = element_line(colour = my_col_pal[4]),
+        axis.line = element_blank(),
+        legend.position = "top")
+```
+
+Let's look at the Administrative law and regulatory procedures bills
+
+```{r}
+(admin_law_bills = gov_ops_bills %>% 
+  filter(legislative_subjects == "Administrative law and regulatory procedures") %>% 
+  select(1:2, title, latestAction_text, latestAction_actionDate, everything()))
+```
+
+```{r}
+admin_law_bills %>% 
+  select(bill_id, title, actions) %>% 
+  unnest(actions) %>% 
+  mutate(action_type = factor(action_type, 
+                              levels = c("IntroReferral", "Committee", "Floor", 
+                                         "Discharge", "President", "BecameLaw"), 
+                              ordered = T)) %>% 
+  # count(action_type)
+  select(bill_id, title, 
+         action_text, action_type, actionCode, actionDate, actionTime, 
+         starts_with("action_source"), starts_with("action_committee")) %>% 
+  # Remove intro actions with a missing action code
+  # filter(actionCode != "Intro-H"|is.na(actionCode)) %>% 
+  # Create action timestamp to incorporate both date and time
+  mutate(action_ts = make_datetime(year = year(actionDate), 
+                                   month = month(actionDate), 
+                                   day = day(actionDate), 
+                                   hour = coalesce(hour(actionTime), 0), 
+                                   min = coalesce(minute(actionTime), 0), 
+                                   sec = coalesce(second(actionTime), 0), 
+                                   tz = "US/Eastern"), 
+         .before = actionDate) %>% 
+   arrange(bill_id, action_ts, action_type) %>% 
+   # Number actions
+  group_by(bill_id) %>% 
+  mutate(action_number = row_number(),
+         became_law = ("BecameLaw" %in% action_type), .after = actionTime) %>% 
+  ungroup() %>% 
+  select(-action_ts, -became_law) %>% 
+  reactable(resizable = T)
+```
+
+
 
 Can we scale this up to see what actions are taken on house bills on a timeline?
 
 ```{r}
-# tic()
-# (house_bills = future_map_dfr(flatten_chr(house_bill_files), extract_bill_status))
-# toc()
-# 
-# saveRDS(house_bills, here("data", "cleaned", "BILLSTATUS_117_House.Rds"))
+tic()
+(house_bills = future_map_dfr(flatten_chr(house_bill_files), extract_bill_status))
+toc()
 
-house_bills = readRDS(here("data", "cleaned", "BILLSTATUS_117_House.Rds"))
+saveRDS(house_bills, here("data", "cleaned", "BILLSTATUS_117_House.Rds"))
+
+# house_bills = readRDS(here("data", "cleaned", "BILLSTATUS_117_House.Rds"))
 ```
 
 What does this data look like?
@@ -172,7 +345,7 @@ glimpse(house_bills$hr)
 ```
 
 
-### Actions
+## Actions
 
 The actions tibbles are not necessarily structurally consistent.
 What fields are present and when?
@@ -256,6 +429,16 @@ actions_unnested %>%
   theme_mark(plots_pane = T)
 ```
 
+### Action Codes
+
+The actions data is messy.
+There are a number of cases where actions are duplicated in the data which need to reconcile in order to make sense of the legislative timeline.
+Below are a list of the cases I have found:
+
+- Action code `E30000` and `36000` with action type `President` and `BecameLaw` respectively appear to both represent the president signing a bill into law, while action codes `E40000` and `36000` with the same respective action types represent a bill becoming a public law. In this case, action type `President` and `BecameLaw` are interchangeable
+- Action code `Intro-H` appears to be a duplicate of action code `1000`, both of which are `IntroReferral` action types
+
+
 How do actions with actionCodes listed on congress.gov differ from those which are not?
 
 ```{r}
@@ -293,7 +476,7 @@ actions_unnested %>%
 
 No, **1000** occurs more often.
 
-Does `Intro-H` only occur in cases where `1000` is present too?
+Does `Intro-H` **only occur** in cases where `1000` is present too?
 
 ```{r}
 actions_unnested %>% 
