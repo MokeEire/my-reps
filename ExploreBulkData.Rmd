@@ -96,15 +96,20 @@ select(sample_bill_df,
       billType = colDef(show = F,name = "Bill Type", width = 50),
       billNumber = colDef(show = F,name = "Bill #", width = 40),
       title = colDef(name = "Bill Title", width = 420),
-      createDate = colDef(name = "Created", width = 80, format = colFormat(date = T, locales = "en-GB")),
-      latestAction_actionDate = colDef(name = "Date", width = 80, format = colFormat(date = T, locales = "en-GB")),
+      createDate = colDef(name = "Created", width = 80, 
+                          format = colFormat(date = T, locales = "en-GB")),
+      latestAction_actionDate = colDef(name = "Date", width = 80, 
+                                       format = colFormat(date = T, locales = "en-GB")),
       latestAction_text = colDef(name = "Action", width = 320),
       version = colDef(show=F),
-      updateDate = colDef(name = "Updated", width = 80, format = colFormat(date = T, locales = "en-GB")),
-      introducedDate = colDef(name = "Introduced", width = 80, format = colFormat(date = T, locales = "en-GB"))
+      updateDate = colDef(name = "Updated", width = 80, 
+                          format = colFormat(date = T, locales = "en-GB")),
+      introducedDate = colDef(name = "Introduced", width = 80, 
+                              format = colFormat(date = T, locales = "en-GB"))
     ),
     columnGroups = list(
-      colGroup(name = "Latest Action", columns = c("latestAction_actionDate", "latestAction_text"))
+      colGroup(name = "Latest Action", 
+               columns = c("latestAction_actionDate", "latestAction_text"))
     )
   )
 ```
