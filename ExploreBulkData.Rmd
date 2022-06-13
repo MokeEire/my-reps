@@ -47,7 +47,8 @@ With the directory structure, I create a list of files by bill type.
 house_bill_types = list.files(here("data", "BILLSTATUS","117"), pattern = "^h")
 
 (house_bill_folders = here("data", "BILLSTATUS", "117", 
-                          house_bill_types))
+                          house_bill_types) %>% 
+    str_remove_all("\\/OneDrive"))
 
 house_bill_files = map(house_bill_folders, list.files, full.names = T) %>% 
   set_names(house_bill_types)
