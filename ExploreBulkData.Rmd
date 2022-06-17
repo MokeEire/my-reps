@@ -1,7 +1,7 @@
 ---
 title: "Explore Bill Status bulk data"
 output: 
-  html_notebook:
+  rmdformats::robobook:
     df_print: paged
 ---
 
