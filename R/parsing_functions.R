@@ -390,6 +390,8 @@ extract_bill_status = function(xml_file,
   bill_df$bill_titles = list(bill_titles)
   bill_df$bill_text_versions = list(bill_text_versions)
   
+  bill_df = bind_cols(bill_df, latest_action)
+
   log_debug(logger, 
            bill_type = bill_df$billType,
            bill_num = bill_df$billNumber,
@@ -543,7 +545,14 @@ extract_bill_status = function(xml_file,
             bill_num = bill_df$billNumber,
             "Complete")
   
-  finished_df
+  mutate(finished_df,
+         across(ends_with("Date"), as_datetime),
+         actions = map(actions, mutate, 
+                       action_type = factor(action_type, 
+                                            levels = c("IntroReferral", "Committee", "Floor", 
+                                                       "Discharge", "President", "BecameLaw"), 
+                                            ordered = T))
+         )
 }
 
 trunc_columns = function(df){
