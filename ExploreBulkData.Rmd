@@ -86,11 +86,11 @@ glimpse(sample_bill_df)
 
 ```
 
-View the bill in a table (Note I have a preference for the date format `dd/mm/yyyy` so that is the format used here)
+Let's put this into a a nicer table (Note I have a preference for the date format `dd/mm/yyyy` so that is the format used here)
 
 ```{r sample-bill-rt}
 select(sample_bill_df, 
-       title, bill_id, createDate, introducedDate, where(negate(is_list)),
+       bill_id, title, introducedDate, where(negate(is_list)), createDate,
        -constitutionalAuthorityStatementText) %>% 
   reactable(
     columns = list(
@@ -146,6 +146,7 @@ Let's visualize what this timeline might look like, counting the number of each 
 sample_actions %>% 
   # Sort cols and rows
   select(bill_id, billType, billNumber, action_type, actionDate, action_text, action_committee_name, action_source_name) %>%
+  mutate(action_type = fct_explicit_na(action_type, na_level = "(Null Action Type)")) %>% 
   arrange(billType, billNumber, actionDate, action_type) %>% 
   # Plot
   ggplot(., aes(y = action_type, x = actionDate))+
@@ -156,14 +157,17 @@ sample_actions %>%
               size = 3, alpha = .85, 
               show.legend = F,
               height = 0.025, width = 2.5)+
-  labs(title = "Bill actions over time")+
-  scale_x_date(name = "Action Date")+
+  labs(title = "Sample bill timeline",
+       subtitle = str_c("Timeline of actions for bill ", sample_bill_df$bill_id, ", by action type"))+
+  scale_x_date(name = "Action Date", breaks = scales::breaks_pretty(n = 6), labels = scales::label_date_short())+
   # scale_y_continuous(name = "# of actions", 
   #                    breaks = scales::breaks_width(1), limits = c(0, NA))+
   scale_colour_manual(values = viz_colours[1:length(unique(sample_actions$action_type))])+
   scale_size(guide = "none", range = c(2,7))+
   theme_moke(plots_pane = T)+
-  theme(legend.position = "top", legend.justification = "left")
+  theme(legend.position = "top", legend.justification = "left",
+        axis.title.y.left = element_blank(), axis.title.x = element_blank(),
+        axis.ticks.x = element_line())
 ```
 
 However, it looks like we will need to clean the actions because there appears to be a lot of duplicate `IntroReferral` actions.
