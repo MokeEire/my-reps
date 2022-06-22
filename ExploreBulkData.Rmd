@@ -5,7 +5,7 @@ output:
     df_print: paged
 ---
 
-The goal of exploring legislative data is to provides citizens with a clearer view of who their representatives are and what they are doing.
+The goal of exploring legislative data is to provide a clearer view of who our representatives are and what they are doing.
 An ideal solution combines Datamade's [beautifully simple representative finder](https://myreps.datamade.us/) and Project Vote Smart's [vast collection of data on legislator activities](https://justfacts.votesmart.org/).
 
 Other questions worth investigating:
@@ -31,6 +31,8 @@ source("R/parsing_functions.R")
 action_codes = read_csv(here("data", "action_codes.csv"), col_types = "cc")
 ```
 
+# Collecting the data
+
 I have downloaded all the different bill types for the 117th congress from https://www.govinfo.gov/bulkdata/BILLSTATUS/117/.
 Below is the structure of this directory
 
@@ -42,6 +44,9 @@ fs::dir_tree(here("data", "BILLSTATUS", "117"), recurse = F)
 
 First we'll parse bills which were introduced in the house, or the bill types beginning with "h".
 With the directory structure, I create a list of files by bill type.
+
+House-originated bills (H.R.) are by far the most common, while simple resolutions (H. Res.) are the second most common.
+Joint resolutions (H.J. Res.) and concurrent resolutions are introduced much less frequently.
 
 ```{r}
 house_bill_types = list.files(here("data", "BILLSTATUS","117"), pattern = "^h")
@@ -55,9 +60,8 @@ house_bill_files = map(house_bill_folders, list.files, full.names = T) %>%
 
 ```
 
-Let's check how many bill XML files are in each folder.
-House-originated bills (H.R.) are by far the most common, while simple resolutions (H. Res.) are the second most common.
-Joint resolutions (H.J. Res.) and concurrent resolutions are introduced much less frequently.
+How many bill XML files are in each folder?
+
 
 ```{r}
 house_bill_files  %>% 
@@ -66,7 +70,7 @@ house_bill_files  %>%
 
 ## Examine single bill
 
-What does the data look like for a single bill?
+To start off, I want to parse a single bill.
 
 ```{r}
 # Sample a bill
