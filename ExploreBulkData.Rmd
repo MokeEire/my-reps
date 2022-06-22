@@ -154,7 +154,7 @@ sample_actions %>%
   geom_jitter(aes(colour = action_type), 
               size = 3, alpha = .85, 
               show.legend = F,
-              height = 0.025, width = 2.5)+
+              height = 0.1, width = .05)+
   labs(title = "Sample bill timeline",
        subtitle = str_c("Timeline of actions for bill ", sample_bill_df$bill_id, ", by action type"))+
   scale_x_date(name = "Action Date", breaks = scales::breaks_pretty(n = 6), labels = scales::label_date_short())+
@@ -174,11 +174,10 @@ Below is a table of these actions in our sample bill: `r sample_bill_df$bill_id`
 ```{r}
 sample_actions %>% 
   filter(action_type == "IntroReferral") %>% 
-  select(bill_id, title, actionDate, action_type, actionCode, action_text, action_source_name, action_committee_name)
+  select(bill_id, title, action_type, actionCode, actionDate, action_text, action_source_name, action_committee_name)
 ```
 
-
-## Create House bills dataset
+# Create House bills dataset
 
 ```{r sample-hr-bills, eval=F}
 # Test for sample
