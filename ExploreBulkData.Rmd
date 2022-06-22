@@ -898,32 +898,43 @@ Look at Government Operations and Politics legislation
 ```
 
 ```{r}
+library(ggdist)
 gov_ops_bills %>% 
   select(bill_id, ends_with("Date"), legislative_subjects) %>% 
   add_count(legislative_subjects, wt = n_distinct(bill_id)) %>% 
   filter(n > 100) %>% 
-  pivot_longer(
-    cols = ends_with("Date"), 
-    names_to = "type", 
-    values_to = "time", 
-    names_transform = list(type = ~str_replace_all(., c("Date" = "", "(?=_).+" = "")))) %>% 
-  mutate(date = as.Date(time)) %>% 
-  ggplot(., aes(x = time, y = bill_id))+
+  mutate(active = interval(start = introducedDate, end = latestAction_actionDate)) %>% 
+  # pivot_longer(
+  #   cols = ends_with("Date"), 
+  #   names_to = "type", 
+  #   values_to = "time", 
+  #   names_transform = list(type = ~str_replace_all(., c("Date" = "", "(?=_).+" = "")))) %>% 
+  # mutate(date = as.Date(time),
+  #        week = floor_date(date, unit = "week")) %>% 
+  # count(legislative_subjects, week)
+  ggplot(., aes(y = bill_id))+
   # Line for each bill, point for each date
-  geom_line(size = 1)+
-  geom_point(aes(colour = type), size = 3.5, alpha = .8)+
+  # geom_line()+
+  # geom_point(aes(), alpha = .8)+
+  geom_linerange(aes(xmin = int_start(active), 
+                     xmax = int_end(active), 
+                     group = bill_id))+
+  # stat_halfeye(
+  # 
+  # )+
   # Axes
-  scale_x_datetime(name = NULL, labels = scales::label_date_short())+
+  # scale_x_date(name = NULL, labels = scales::label_date_short())+
   scale_y_discrete(name = NULL, position = "right")+
-  scale_colour_manual(name = "Date", values = viz_colours[1:4])+
+  # scale_colour_manual(name = "Date", values = viz_colours[1:4])+
   # Facet by legislative subject
-  facet_wrap(~legislative_subjects, scales = "free_y", ncol = 1, 
+  facet_wrap(~legislative_subjects, scales = "free_y", ncol = 1,
              strip.position = "left")+
   # Theming
   theme_moke(plots_pane = T, text_family = NULL, title_family = NULL, subtitle_family = NULL)+
   theme(panel.grid.major.y = element_blank(),
         panel.grid.major.x = element_line(colour = my_col_pal[4]),
         axis.line = element_blank(),
+        axis.text.y = element_blank(),
         legend.position = "top")
 ```
 
@@ -1103,7 +1114,6 @@ actions_unnested %>%
   facet_wrap(~billType, scales = "free_y")
 ```
 
-
 ```{r}
 actions_unnested %>% 
   # Combine bill type and number to create an ID
@@ -1112,14 +1122,10 @@ actions_unnested %>%
   filter("BecameLaw" %in% action_type)
 ```
 
-
-
-
 ```{r}
 sample_bill_df[["actions"]][[1]] %>% 
   distinct(action_type, actionDate, action_committee_name)
 ```
-
 
 Why are there multiple of what seem to be the same action?
 
@@ -1130,5 +1136,3 @@ read_xml(sample_bill_file) %>%
   xml_find_all("item") %>% 
   map(xml_contents)
 ```
-
-
