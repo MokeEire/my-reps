@@ -3,6 +3,9 @@ title: "Explore Bill Status bulk data"
 output: 
   rmdformats::robobook:
     df_print: paged
+editor_options: 
+  markdown: 
+    wrap: sentence
 ---
 
 The goal of exploring legislative data is to provide a clearer view of who our representatives are and what they are doing.
@@ -10,14 +13,13 @@ An ideal solution combines Datamade's [beautifully simple representative finder]
 
 Other questions worth investigating:
 
-- how long does it take for a bill to become law?
-- which legislative processes are the most time-intensive?
-- which decision-makers are acting in each stage?
-- what legislative paths can a bill take?
-map the legislative process for bills and get a sense for how legislator behaviour affects a bill's likelihood of being considered, its content, and the eventual outcome
-- Make a sankey diagram depicting how bills flow through congress
+-   how long does it take for a bill to become law?
+-   which legislative processes are the most time-intensive?
+-   which decision-makers are acting in each stage?
+-   what legislative paths can a bill take? map the legislative process for bills and get a sense for how legislator behaviour affects a bill's likelihood of being considered, its content, and the eventual outcome
+-   Make a sankey diagram depicting how bills flow through congress
 
-It might be worth reaching out to: https://github.com/unitedstates/congress
+It might be worth reaching out to: <https://github.com/unitedstates/congress>
 
 ```{r setup}
 library(extrafont)
@@ -33,14 +35,12 @@ action_codes = read_csv(here("data", "action_codes.csv"), col_types = "cc")
 
 # Collecting the data
 
-I have downloaded all the different bill types for the 117th congress from https://www.govinfo.gov/bulkdata/BILLSTATUS/117/.
+I have downloaded all the different bill types for the 117th congress from <https://www.govinfo.gov/bulkdata/BILLSTATUS/117/>.
 Below is the structure of this directory
 
-```{r}
+```{r dir-tree}
 fs::dir_tree(here("data", "BILLSTATUS", "117"), recurse = F)
 ```
-
-# Parse House bills
 
 First we'll parse bills which were introduced in the house, or the bill types beginning with "h".
 With the directory structure, I create a list of files by bill type.
@@ -48,7 +48,7 @@ With the directory structure, I create a list of files by bill type.
 House-originated bills (H.R.) are by far the most common, while simple resolutions (H. Res.) are the second most common.
 Joint resolutions (H.J. Res.) and concurrent resolutions are introduced much less frequently.
 
-```{r}
+```{r list-bill-files}
 house_bill_types = list.files(here("data", "BILLSTATUS","117"), pattern = "^h")
 
 (house_bill_folders = here("data", "BILLSTATUS", "117", 
@@ -62,17 +62,16 @@ house_bill_files = map(house_bill_folders, list.files, full.names = T) %>%
 
 How many bill XML files are in each folder?
 
-
-```{r}
+```{r count-bills}
 house_bill_files  %>% 
   map(length)
 ```
 
-## Examine single bill
+# Examine a single bill
 
 To start off, I want to parse a single bill.
 
-```{r}
+```{r sample-bill}
 # Sample a bill
 sample_bill_file = sample(house_bill_files$hr, 1)
 
@@ -118,11 +117,10 @@ select(sample_bill_df,
   )
 ```
 
-
-### Actions
+## Actions
 
 What actions are taken on a bill?
-After a bill is introduced, how do members of congress interact with it? 
+After a bill is introduced, how do members of congress interact with it?
 
 To answer questions like these, we need to `unnest()` the `actions` column.
 
@@ -226,10 +224,7 @@ Save this object for use later
 all_bills = readRDS(here("data", "cleaned", "BILLSTATUS_117_House.Rds"))
 ```
 
-
-
-
-### Actions
+## Parse Actions
 
 The actions tibbles are not necessarily structurally consistent.
 What fields are present and when?
