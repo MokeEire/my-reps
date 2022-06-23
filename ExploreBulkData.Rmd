@@ -1087,14 +1087,6 @@ Let's look at the Administrative law and regulatory procedures bills
 admin_law_bills %>% 
   select(bill_id, title, actions) %>% 
   unnest(actions) %>% 
-  mutate(action_type = factor(action_type, 
-                              levels = c("IntroReferral", "Committee", "Floor", 
-                                         "Discharge", "President", "BecameLaw"), 
-                              ordered = T),
-         action_source_name = factor(action_source_name,
-                                     levels = c("Library of Congress", "House floor actions", 
-                                                "House committee actions", "Senate"),
-                                     ordered = T)) %>% 
   # count(action_type)
   select(bill_id, title, 
          action_text, action_type, actionCode, actionDate, actionTime, 
