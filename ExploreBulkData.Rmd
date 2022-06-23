@@ -860,15 +860,15 @@ actions_unnested %>%
 
 ```
 
-+---------------+-------------------------------------+----------------+
-| Action Code   | Action                              | Given/Inferred |
-+===============+=====================================+================+
-| `H12300`      | Committee discharged                | Inferred       |
-+---------------+-------------------------------------+----------------+
-| `H17000`      | Motion to discharge committee       | Inferred       |
-+---------------+-------------------------------------+----------------+
-| `H12490`      | Discharged from House Calendar      | Inferred       |
-+---------------+-------------------------------------+----------------+
++---------------+-----------------------------------+----------------+
+| Action Code   | Action                            | Given/Inferred |
++===============+===================================+================+
+| `H12300`      | Committee discharged              | Inferred       |
++---------------+-----------------------------------+----------------+
+| `H17000`      | Motion to discharge committee     | Inferred       |
++---------------+-----------------------------------+----------------+
+| `H12490`      | Discharged from House Calendar    | Inferred       |
++---------------+-----------------------------------+----------------+
 
 : Discharge Action Codes
 
@@ -893,15 +893,15 @@ actions_unnested %>%
   # View("President Action Codes")
 ```
 
-+---------------+-------------------------------------+----------------+
-| Action Code   | Action                              | Given/Inferred |
-+===============+=====================================+================+
-| `28000`       | Presented to President              | Given          |
-+---------------+-------------------------------------+----------------+
-| `E30000`      | Signed by President                 | Inferred       |
-+---------------+-------------------------------------+----------------+
-| `E40000`      | Became Public Law                   | Inferred       |
-+---------------+-------------------------------------+----------------+
++---------------+-----------------------------------+----------------+
+| Action Code   | Action                            | Given/Inferred |
++===============+===================================+================+
+| `28000`       | Presented to President            | Given          |
++---------------+-----------------------------------+----------------+
+| `E30000`      | Signed by President               | Inferred       |
++---------------+-----------------------------------+----------------+
+| `E40000`      | Became Public Law                 | Inferred       |
++---------------+-----------------------------------+----------------+
 
 : President Action Codes
 
@@ -927,11 +927,11 @@ actions_unnested %>%
   # View("Became Law Action Codes")
 ```
 
-+---------------+-------------------------------------+----------------+
-| Action Code   | Action                              | Given/Inferred |
-+===============+=====================================+================+
-| `36000`       | Became Public Law                   | Given          |
-+---------------+-------------------------------------+----------------+
++---------------+-----------------------------------+----------------+
+| Action Code   | Action                            | Given/Inferred |
++===============+===================================+================+
+| `36000`       | Became Public Law                 | Given          |
++---------------+-----------------------------------+----------------+
 
 : Became Law Action Codes
 
@@ -1139,103 +1139,4 @@ actions_unnested %>%
   labs(title = "Cumulative bill actions, by legislation type and whether it became law")+
   facet_wrap(~billType, scales = "free_y")+
   theme_moke(plots_pane = T)
-```
-
-Can we get an idea of the order of actions based on their average position in the data?
-
-```{r}
-(action_order_summary = actions_unnested %>% 
-  group_by(billType, action_type) %>% 
-  summarise(across(action_number, list(min = min, 
-                                       y25 = ~quantile(., .25), 
-                                       mean = mean, median = median, 
-                                       y75 = ~quantile(., .75),
-                                       max = max), na.rm=T)))
-```
-
-```{r}
-action_order_summary %>%
-  pivot_longer(cols = starts_with("action_n"), names_to = "measure", values_to = "value",
-               names_transform = list(measure = ~str_remove_all(., "^action_number_")))
-
-action_order_summary %>% 
-  ggplot(., aes(x = action_type))+
-  geom_boxplot(
-    aes(ymin = action_number_min, 
-        lower = action_number_y25, middle = action_number_median, upper = action_number_y75,
-        ymax = action_number_max),
-    stat = "identity"
-  )+
-  facet_wrap(~billType)+
-  theme_moke(plots_pane = T)+
-  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
-```
-
-```{r}
-actions_unnested %>% 
-  group_by(action_type) %>% 
-  mutate(mean_num = mean(action_number)) %>% 
-  ungroup() %>% 
-  arrange(mean_num) %>% 
-  mutate(action_type = fct_inorder(factor(action_type))) %>% 
-  ggplot(., aes(x = action_type, y = action_number))+
-  geom_boxplot()+
-  labs(title = "In what order do actions typically occur?", x = NULL)+
-  facet_wrap(~billType)+
-  theme_moke(plots_pane = T)
-
-```
-
-```{r}
-actions_unnested %>% 
-  filter(bill_id == sample(bill_id, 1)) -> sample_bill_actions
-
-sample_bill_actions %>% 
-  # Plot
-  ggplot(., aes(x = actionDate))+
-  # Line connecting points
-  geom_line(aes(y = ..count.., group = bill_id), stat = "count", size = .8, alpha = .8)+
-  # Points using the count of each action type on a given date
-  geom_point(aes(colour = action_type, size = ..count..), stat = "count")+
-  labs(title = "Bill actions over time", 
-       x = "Action Date", y = "# of actions")+
-  scale_size(guide = "none", range = c(2,7))+
-  theme_moke(plots_pane = T)
-```
-
-Let's look only at those bills that became law
-
-```{r}
-actions_unnested %>% 
-  # Combine bill type and number to create an ID
-  unite(bill_id, billType, billNumber, sep = "-", remove = F) %>% 
-  group_by(bill_id) %>% 
-  filter("BecameLaw" %in% action_type) %>%
-  ungroup() %>% 
-  ggplot(., aes(x = action_ts, y = action_number))+
-  geom_line(aes(group = bill_id))+
-  facet_wrap(~billType, scales = "free_y")
-```
-
-```{r}
-actions_unnested %>% 
-  # Combine bill type and number to create an ID
-  unite(bill_id, billType, billNumber, sep = "-", remove = F) %>% 
-  group_by(bill_id) %>% 
-  filter("BecameLaw" %in% action_type)
-```
-
-```{r}
-sample_bill_df[["actions"]][[1]] %>% 
-  distinct(action_type, actionDate, action_committee_name)
-```
-
-Why are there multiple of what seem to be the same action?
-
-```{r}
-read_xml(sample_bill_file) %>% 
-  xml_child("bill") %>% 
-  xml_child("actions") %>% 
-  xml_find_all("item") %>% 
-  map(xml_contents)
 ```
