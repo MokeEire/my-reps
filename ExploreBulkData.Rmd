@@ -40,7 +40,7 @@ knit_print.data.frame = function(x, ...){
                      compact = T, 
                      resizable = T),
     ...
-  )
+    )
 }
 
 action_codes = read_csv(here("data", "action_codes.csv"), col_types = "cc")
@@ -48,8 +48,9 @@ action_codes = read_csv(here("data", "action_codes.csv"), col_types = "cc")
 
 # Collecting the data
 
-I have downloaded all the different bill types for the 117th congress from <https://www.govinfo.gov/bulkdata/BILLSTATUS/117/>.
-Below is the structure of this directory
+In this post, we'll look at the 117th congress' legislative actions using [govinfo's BILLSTATUS data](https://www.govinfo.gov/bulkdata/BILLSTATUS/117).
+You can download the zip files for each bill type ([hr](https://www.govinfo.gov/bulkdata/BILLSTATUS/117/hr), [sjres](https://www.govinfo.gov/bulkdata/BILLSTATUS/117/sjres), [etc.](https://www.govinfo.gov/bulkdata/BILLSTATUS/117)) and unzip the XML files within.
+Below is my directory structure which mimics that of govinfo, but you could also just dump them all into a single folder.
 
 ```{r dir-tree}
 fs::dir_tree(here("data", "BILLSTATUS", "117"), recurse = F)
@@ -82,7 +83,8 @@ house_bill_files  %>%
 
 # Examine a single bill
 
-To start off, I want to parse a single bill.
+To start off, let's have a look at a single bill.
+What do we know about each piece of legislation?
 
 ```{r sample-bill, cache=T}
 # Sample a bill
