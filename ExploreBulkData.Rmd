@@ -1,7 +1,9 @@
 ---
 title: "Explore Bill Status bulk data"
 output: 
-  rmdformats::robobook
+  rmdformats::robobook:
+    code_folding: hide
+    toc_depth: 3
 editor_options: 
   markdown: 
     wrap: sentence
