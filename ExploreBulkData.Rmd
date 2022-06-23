@@ -75,7 +75,7 @@ house_bill_files = map(house_bill_folders, list.files, full.names = T) %>%
 
 How many bill XML files are in each folder?
 
-```{r count-bills}
+```{r count-bills, cache=T}
 house_bill_files  %>% 
   map(length)
 ```
@@ -84,7 +84,7 @@ house_bill_files  %>%
 
 To start off, I want to parse a single bill.
 
-```{r sample-bill}
+```{r sample-bill, cache=T}
 # Sample a bill
 sample_bill_file = sample(house_bill_files$hr, 1)
 
@@ -100,7 +100,7 @@ glimpse(sample_bill_df)
 
 Let's put this into a a nicer table (Note I have a preference for the date format `dd/mm/yyyy` so that is the format used here)
 
-```{r sample-bill-rt}
+```{r sample-bill-rt, cache=T}
 select(sample_bill_df, 
        bill_id, title, introducedDate, where(negate(is_list)), createDate,
        -constitutionalAuthorityStatementText) %>% 
@@ -143,7 +143,8 @@ To answer questions like these, we need to `unnest()` the `actions` column.
          -where(is_list), actions) %>%
   unnest(actions) %>% 
    select(bill_id, 
-          action_type, actionCode, action_text, any_of(c("actionDate", "actionTime")), 
+          action_type, actionCode, action_text, 
+          any_of(c("actionDate", "actionTime")), 
          action_source_name, action_source_code,
          action_committee_name, action_committee_systemCode,
          everything()) %>% 
@@ -184,7 +185,7 @@ sample_actions %>%
 However, it looks like we will need to clean the actions because there appears to be a lot of duplicate `IntroReferral` actions.
 Below is a table of these actions in our sample bill: `r sample_bill_df$bill_id`
 
-```{r}
+```{r sample-intro-actions}
 sample_actions %>% 
   filter(action_type == "IntroReferral") %>% 
   select(bill_id, title, action_type, actionCode, actionDate, action_text, action_source_name, action_committee_name)
@@ -192,13 +193,13 @@ sample_actions %>%
 
 # Create House bills dataset
 
-```{r sample-hr-bills, eval=F}
+```{r sample-hr-bills, eval=F, include=F}
 # Test for sample
 # Extract bill data for a sample of house bills
 hr_sample = sample(house_bill_files$hr, 1000)
 ```
 
-```{r extract-sample-bills, eval=F}
+```{r extract-sample-bills, eval=F, include=F}
 tic(str_c("Extract ", length(hr_sample), " bills"))
 (hr_bills = hr_sample %>% # house_bill_files$hr %>% 
   future_map_dfr(extract_bill_status, get_votes = F, log_types = "console") %>% 
@@ -214,14 +215,14 @@ toc()
 
 ```
 
-```{r sample-hr-glimpse, eval=F}
+```{r sample-hr-glimpse, eval=F, include=F}
 glimpse(hr_bills)
 ```
 
 First combine the bill file list into a single vector and question whether they should even be in a list.
 Then run our `extract_bill_status()` function on all of our bills, in parallel using `{furrr}` to save some time.
 
-```{r, eval=F, echo = T}
+```{r extract-all-bills, eval=F, echo = T, cache=T}
 all_files = flatten_chr(house_bill_files)
 
 tic(str_c("Extract ", sum(map_dbl(house_bill_files, length)), " bills"))
@@ -229,19 +230,67 @@ tic(str_c("Extract ", sum(map_dbl(house_bill_files, length)), " bills"))
 toc()
 ```
 
-Save this object for use later
+Now this process is a bit time intensive so I save this object as an `.Rds` file for faster future loading.
+Here it is being saved/loaded
 
-```{r}
+```{r save-load-rds}
+# Save all_bills object
 # saveRDS(all_bills, here("data", "cleaned", "BILLSTATUS_117_House.Rds"))
+
+# Load all_bills object
 all_bills = readRDS(here("data", "cleaned", "BILLSTATUS_117_House.Rds"))
 ```
 
+When are these bills created/updated?
+
+```{r bill-dates-summary}
+all_bills %>% 
+  # Calculate summary stats for each date var
+  summarise(
+    across(c(createDate, updateDate),
+           .fns = list(min = min, mean = mean, max = max, median = median), 
+           na.rm=T, .names = "{.fn}_{.col}")
+  ) %>% 
+  # pivot for table
+  pivot_longer(
+    everything(),
+    names_to = c("type", ".value"),
+    names_sep = "_",
+    values_to = "stat"
+    )
+```
+
+What does this look like on a histogram?
+
+```{r bills-dates-histogram}
+all_bills %>% 
+  select(bill_id, billType, ends_with("Date")) %>% 
+  pivot_longer(
+    cols = ends_with("Date"), 
+    names_to = "type", 
+    values_to = "time", 
+    names_transform = list(type = ~str_replace_all(., c("Date" = "", "(?=_).+" = "")))) %>% 
+  mutate(date = as.Date(time)) %>% 
+  ggplot(., aes(x = date, fill = type))+
+  geom_histogram(alpha = .8,
+                 binwidth = 14, position = position_identity())+
+  facet_grid(billType~type, scales = "free_y")+
+  theme_moke(plots_pane = T, title_family = NULL, subtitle_family = NULL, text_family = NULL)
+```
+
+So now that we have the dataset in our hands, what can we do with it?
+
 ## Parse Actions
+
+There are a number of actions that legislators can take on a bill in congress.
+For a start the bill needs to be introduced, then it can be sent to a committee for consideration, debated on the floor, and sent to the president to become law for simple or joint resolutions.
+
+To get an accurate timeline of the actions taken on each bill, we will want to look at the `actionDate`, `actionTime` (for Floor actions), `action_type`, `actionCode`, and `action_text`.
 
 The actions tibbles are not necessarily structurally consistent.
 What fields are present and when?
 
-```{r}
+```{r action-col-count}
 all_bills %>% 
   select(bill_id, actions) %>% 
   # Create a list of field names for each actions dataframe
@@ -355,6 +404,75 @@ actions_unnested %>%
         panel.grid.major.x = element_line())
 ```
 
+Can we get an idea of the order of actions based on their average position in the data?
+
+```{r action-order-summary}
+(action_order_summary = actions_unnested %>% 
+  group_by(billType, action_type) %>% 
+  summarise(across(action_number, list(min = min, 
+                                       y25 = ~quantile(., .25), 
+                                       mean = mean, median = median, 
+                                       y75 = ~quantile(., .75),
+                                       max = max), na.rm=T)))
+```
+
+```{r action-order-boxplot}
+action_order_summary %>%
+  pivot_longer(
+    cols = starts_with("action_n"), 
+    names_to = "measure", values_to = "value",
+    names_transform = list(
+      measure = ~str_remove_all(., "^action_number_")
+      )
+    )
+
+action_order_summary %>% 
+  ggplot(., aes(x = action_type))+
+  geom_boxplot(
+    aes(ymin = action_number_min, 
+        lower = action_number_y25, 
+        middle = action_number_median, 
+        upper = action_number_y75,
+        ymax = action_number_max),
+    stat = "identity"
+  )+
+  facet_wrap(~billType)+
+  theme_moke(plots_pane = T)+
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
+```
+
+```{r action-order-boxplot2}
+actions_unnested %>% 
+  group_by(action_type) %>% 
+  mutate(mean_num = mean(action_number)) %>% 
+  ungroup() %>% 
+  arrange(mean_num) %>% 
+  mutate(action_type = fct_inorder(factor(action_type))) %>% 
+  ggplot(., aes(x = action_type, y = action_number))+
+  geom_boxplot()+
+  labs(title = "In what order do actions typically occur?", x = NULL)+
+  facet_wrap(~billType)+
+  theme_moke(plots_pane = T)
+
+```
+
+```{r sample-actions-plot}
+actions_unnested %>% 
+  filter(bill_id == sample(bill_id, 1)) -> sample_bill_actions
+
+sample_bill_actions %>% 
+  # Plot
+  ggplot(., aes(x = actionDate))+
+  # Line connecting points
+  geom_line(aes(y = ..count.., group = bill_id), stat = "count", size = .8, alpha = .8)+
+  # Points using the count of each action type on a given date
+  geom_point(aes(colour = action_type, size = ..count..), stat = "count")+
+  labs(title = "Bill actions over time", 
+       x = "Action Date", y = "# of actions")+
+  scale_size(guide = "none", range = c(2,7))+
+  theme_moke(plots_pane = T)
+```
+
 ## Cleaning Action Codes
 
 The actions data is messy.
@@ -395,7 +513,7 @@ Below are a list of the cases I have found:
 
 Which action types have action codes?
 
-```{r}
+```{r action-codes-summary}
 actions_unnested %>% 
   group_by(action_type) %>% 
   summarise(
@@ -455,7 +573,7 @@ actions_unnested %>%
 
 Do these two actions occur for every bill?
 
-```{r}
+```{r intro-code-comparison}
 actions_unnested %>% 
   filter(actionCode %in% actions_to_compare) %>% 
   count(bill_id, actionCode) %>% 
@@ -468,7 +586,7 @@ No, `1000` occurs for every bill, but `Intro-H` does not.
 So we can remove `Intro-H` actions without losing any information.
 This reduces the size of the actions data by \~8,000 rows.
 
-```{r}
+```{r intro-code-dedupe}
 actions_unnested %>% 
   select(bill_id, title, introducedDate, 
          action_ts, action_type, actionCode, action_text,
@@ -871,7 +989,7 @@ actions_unnested %>%
 
 What policy areas are present:
 
-```{r}
+```{r policy-areas-unnest}
 (policy_areas = all_bills %>% 
   unnest(policy_areas, keep_empty = T)) %>% 
   count(policy_areas, sort = T)
@@ -879,38 +997,44 @@ What policy areas are present:
 
 What about the different legislative subjects?
 
-```{r}
+```{r leg-subj-unnest}
 (legislative_subjects = policy_areas %>% 
   unnest(legislative_subjects, keep_empty = T)) %>% 
   count(legislative_subjects, sort = T)
 ```
 
-Are legislative subjects missing for a certain bill type?
+Does the presence of legislative subjects differ by bill type?
 
-```{r}
+```{r leg-subj-bill-type}
 legislative_subjects %>% 
+  # Count number of bills of each type
   add_count(billType, name = "total_bills", wt = n_distinct(bill_id)) %>% 
+  # Remove obs missing legislative subjects
   filter(!is.na(legislative_subjects)) %>% 
+  # Count non-missing legislative subject rows
   count(billType, total_bills, wt = n_distinct(bill_id)) %>% 
+  # Calculate prop of total with legislative subjects
   mutate(have_leg_subject = n/total_bills)
 ```
 
-```{r}
+```{r policy-subj-counts}
 legislative_subjects %>% 
-  add_count(policy_areas, name = "policy_area_count", wt = n_distinct(bill_id)) %>% 
+  # Count bills by policy area
+  add_count(policy_areas, name = "policy_area_count", wt = n_distinct(bill_id)) %>%
+  # Count legislative subject/policy area combinations
   count(policy_areas, legislative_subjects, policy_area_count) %>% 
   arrange(-policy_area_count, -n)
 ```
 
 Look at Government Operations and Politics legislation
 
-```{r}
+```{r gov-ops-subset}
 (gov_ops_bills = legislative_subjects %>% 
   # filter("Government Operations and Politics" %in% policy_areas)) # if single row per bill
    filter(policy_areas == "Government Operations and Politics"))
 ```
 
-```{r}
+```{r timeline-dist, eval=F}
 library(ggdist)
 gov_ops_bills %>% 
   select(bill_id, ends_with("Date"), legislative_subjects) %>% 
@@ -953,13 +1077,13 @@ gov_ops_bills %>%
 
 Let's look at the Administrative law and regulatory procedures bills
 
-```{r}
+```{r admin-laws-subset}
 (admin_law_bills = gov_ops_bills %>% 
   filter(legislative_subjects == "Administrative law and regulatory procedures") %>% 
   select(1:2, title, latestAction_text, latestAction_actionDate, everything()))
 ```
 
-```{r}
+```{r admin-law-actions}
 admin_law_bills %>% 
   select(bill_id, title, actions) %>% 
   unnest(actions) %>% 
@@ -996,46 +1120,9 @@ admin_law_bills %>%
   reactable(resizable = T)
 ```
 
-When are these bills created/updated?
-
-```{r}
-all_bills %>% 
-  # Calculate summary stats for each date var
-  summarise(
-    across(c(createDate, updateDate),
-           .fns = list(min = min, mean = mean, max = max, median = median), 
-           na.rm=T, .names = "{.fn}_{.col}")
-  ) %>% 
-  # pivot for table
-  pivot_longer(
-    everything(),
-    names_to = c("type", ".value"),
-    names_sep = "_",
-    values_to = "stat"
-    )
-```
-
-What does this look like on a histogram?
-
-```{r}
-all_bills %>% 
-  select(bill_id, billType, ends_with("Date")) %>% 
-  pivot_longer(
-    cols = ends_with("Date"), 
-    names_to = "type", 
-    values_to = "time", 
-    names_transform = list(type = ~str_replace_all(., c("Date" = "", "(?=_).+" = "")))) %>% 
-  mutate(date = as.Date(time)) %>% 
-  ggplot(., aes(x = date, fill = type))+
-  geom_histogram(alpha = .8,
-                 binwidth = 14, position = position_identity())+
-  facet_grid(billType~type, scales = "free_y")+
-  theme_moke(plots_pane = T, title_family = NULL, subtitle_family = NULL, text_family = NULL)
-```
-
 View number of actions taken on a bill by whether or not they became law
 
-```{r fig.height = 7, fig.width = 8}
+```{r cum-bill-actions, fig.height = 7, fig.width = 8}
 actions_unnested %>% 
   group_by(bill_id) %>% 
   mutate(became_law = ("BecameLaw" %in% action_type)) %>% 
