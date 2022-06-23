@@ -78,7 +78,7 @@ house_bill_files = map(house_bill_folders, list.files, full.names = T) %>%
 
 How many bill XML files are in each folder?
 
-```{r count-bills, cache=T}
+```{r count-bills}
 house_bill_files  %>% 
   map(length)
 ```
@@ -88,14 +88,16 @@ house_bill_files  %>%
 To start off, let's have a look at a single bill.
 What do we know about each piece of legislation?
 
-```{r sample-bill, cache=T}
+```{r sample-bill}
 # Sample a bill
 sample_bill_file = sample(house_bill_files$hr, 1)
 
 # Extract the bill status data
+tic("Extract single bill")
 (sample_bill_df = extract_bill_status(sample_bill_file, 
                                      get_votes = F,
                                      log_types = "console"))
+toc()
 
 # View the bill's contents
 glimpse(sample_bill_df)
@@ -104,7 +106,7 @@ glimpse(sample_bill_df)
 
 Let's put this into a a nicer table (Note I have a preference for the date format `dd/mm/yyyy` so that is the format used here)
 
-```{r sample-bill-rt, cache=T}
+```{r sample-bill-rt}
 sample_col_group = if("latestAction_actionDate" %in% colnames(sample_bill_df)){
   list(
       colGroup(name = "Latest Action",
@@ -117,7 +119,7 @@ sample_col_group = if("latestAction_actionDate" %in% colnames(sample_bill_df)){
 
 select(sample_bill_df, 
        bill_id, title, introducedDate, where(negate(is_list)), createDate,
-       -constitutionalAuthorityStatementText) %>% 
+       -any_of("constitutionalAuthorityStatementText")) %>% 
   reactable(
     columns = list(
       originChamber = colDef(name = "Chamber of Origin", width = 80),
@@ -249,7 +251,9 @@ Here it is being saved/loaded
 # saveRDS(all_bills, here("data", "cleaned", "BILLSTATUS_117_House.Rds"))
 
 # Load all_bills object
+tic("Read bills rds")
 all_bills = readRDS(here("data", "cleaned", "BILLSTATUS_117_House.Rds"))
+toc()
 ```
 
 When are these bills created/updated?
