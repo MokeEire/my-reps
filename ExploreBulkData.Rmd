@@ -417,8 +417,8 @@ actions_unnested %>%
 actions_unnested %>% 
   filter(action_type == "IntroReferral") %>% 
   count(actionCode, Action, action_text) %>% 
-  arrange(actionCode, desc(n)) %>% 
-  View("Intro/Referral Action Codes")
+  arrange(actionCode, desc(n))# %>% 
+  # View("Intro/Referral Action Codes")
 ```
 
 Below is a table of the action codes and their meaning
@@ -490,8 +490,8 @@ actions_unnested %>%
 actions_unnested %>% 
   filter(action_type == "Committee") %>% 
   count(actionCode, Action, action_text) %>% 
-  arrange(actionCode, desc(n)) %>% 
-  View("Committee Action Codes")
+  arrange(actionCode, desc(n))# %>% 
+  # View("Committee Action Codes")
 
 ```
 
@@ -552,8 +552,8 @@ actions_unnested %>%
            Action, action_text_trunc = str_trunc(action_text, width = 60),
            action_text) %>%
   # sort by frequency
-  arrange(desc(actionCode_count), actionCode) %>% 
-  View("Floor Action Codes")
+  arrange(desc(actionCode_count), actionCode)# %>% 
+  # View("Floor Action Codes")
 ```
 
 +-------------+----------------------------------------------------------------------------------------------+----------------+
@@ -673,8 +673,8 @@ actions_unnested %>%
 ```{r floor-missing-codes}
 actions_unnested %>% 
   filter(action_type == "Floor", is.na(actionCode)) %>% 
-  count(action_text, sort = T) %>% 
-  View("Floor Actions missing codes")
+  count(action_text, sort = T)# %>% 
+  # View("Floor Actions missing codes")
 ```
 
 Floor actions which do not have an action code appear to be Senate actions, but include the following types of actions:
@@ -726,8 +726,8 @@ actions_unnested %>%
            Action, action_text_trunc = str_trunc(action_text, width = 60),
            action_text) %>%
   # sort by frequency
-  arrange(desc(actionCode_count), actionCode) %>% 
-  View("Discharge Action Codes")
+  arrange(desc(actionCode_count), actionCode)# %>% 
+  # View("Discharge Action Codes")
 
 ```
 
@@ -760,8 +760,8 @@ actions_unnested %>%
            Action, action_text_trunc = str_trunc(action_text, width = 60),
            action_text) %>%
   # sort by frequency
-  arrange(desc(actionCode_count), actionCode) %>% 
-  View("President Action Codes")
+  arrange(desc(actionCode_count), actionCode)# %>% 
+  # View("President Action Codes")
 ```
 
 +---------------+-------------------------------------+----------------+
@@ -794,8 +794,8 @@ actions_unnested %>%
            Action, action_text_trunc = str_trunc(action_text, width = 60),
            action_text) %>%
   # sort by frequency
-  arrange(desc(actionCode_count), actionCode) %>% 
-  View("Became Law Action Codes")
+  arrange(desc(actionCode_count), actionCode)# %>% 
+  # View("Became Law Action Codes")
 ```
 
 +---------------+-------------------------------------+----------------+
@@ -825,8 +825,8 @@ actions_unnested %>%
            Action, action_text_trunc = str_trunc(action_text, width = 60),
            action_text) %>%
   # sort by frequency
-  arrange(desc(actionCode_count), actionCode) %>% 
-  View("Missing Type Action Codes")
+  arrange(desc(actionCode_count), actionCode)# %>% 
+  # View("Missing Type Action Codes")
 ```
 
 +-------------+-----------------------------------------------------------------------------------+----------------+
