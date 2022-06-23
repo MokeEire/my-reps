@@ -101,6 +101,16 @@ glimpse(sample_bill_df)
 Let's put this into a a nicer table (Note I have a preference for the date format `dd/mm/yyyy` so that is the format used here)
 
 ```{r sample-bill-rt, cache=T}
+sample_col_group = if("latestAction_actionDate" %in% colnames(sample_bill_df)){
+  list(
+      colGroup(name = "Latest Action",
+               columns = c("latestAction_actionDate", "latestAction_text"))
+    )
+  
+} else {
+  NULL
+}
+
 select(sample_bill_df, 
        bill_id, title, introducedDate, where(negate(is_list)), createDate,
        -constitutionalAuthorityStatementText) %>% 
@@ -123,10 +133,7 @@ select(sample_bill_df,
       introducedDate = colDef(name = "Introduced", width = 80, 
                               format = colFormat(date = T, locales = "en-GB"))
     ),
-    columnGroups = list(
-      colGroup(name = "Latest Action",
-               columns = c("latestAction_actionDate", "latestAction_text"))
-    )
+    columnGroups = sample_col_group
   )
 ```
 
