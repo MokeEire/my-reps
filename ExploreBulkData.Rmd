@@ -1,12 +1,16 @@
 ---
 title: "Explore Bill Status bulk data"
 output: 
-  rmdformats::robobook:
-    df_print: paged
+  rmdformats::robobook
 editor_options: 
   markdown: 
     wrap: sentence
 ---
+
+Enacting laws is one of the most important powers of a government's legislative branch, yet the process of designing, proposing, and passing laws is relatively opaque.
+An effective legislature is characterized by a strong understanding of problems impacting society (both at present and in the future), group decision-making processes which improve the quality of proposed legislation, and efficient use of time and resources to prioritize legislation in the most pressing areas.
+
+The US government maintains a [repository](https://www.govinfo.gov/bulkdata/BILLSTATUS) of congressional bill data which offers us a view of how bills pass through congress and how congress members act in the process.
 
 The goal of exploring legislative data is to provide a clearer view of who our representatives are and what they are doing.
 An ideal solution combines Datamade's [beautifully simple representative finder](https://myreps.datamade.us/) and Project Vote Smart's [vast collection of data on legislator activities](https://justfacts.votesmart.org/).
@@ -21,7 +25,7 @@ Other questions worth investigating:
 
 It might be worth reaching out to: <https://github.com/unitedstates/congress>
 
-```{r setup}
+```{r setup, include=F}
 library(extrafont)
 library(tictoc)
 library(furrr)
@@ -29,6 +33,15 @@ library(here)
 library(reactable)
 plan(multisession)
 source("R/parsing_functions.R")
+
+knit_print.data.frame = function(x, ...){
+  knitr::knit_print(
+    mokeR::reactable(x,
+                     compact = T, 
+                     resizable = T),
+    ...
+  )
+}
 
 action_codes = read_csv(here("data", "action_codes.csv"), col_types = "cc")
 ```
