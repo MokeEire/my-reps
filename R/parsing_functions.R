@@ -196,6 +196,16 @@ format_date_api = function(date){
 
 
 
+#' Parse committee
+#'
+#' @param committee committee_element
+#' 
+#' Flatten committee activities, and assign subcommittees to their own tibble
+#'
+#' @return
+#' @export
+#'
+#' @examples
 parse_committee = function(committee){
   committee_tibbled = committee %>% 
     modify_at("activities", map_dfr, ~flatten_rename(.x, "committee_activity")) %>% 
@@ -203,6 +213,7 @@ parse_committee = function(committee){
       map_dfr(subcommittee, parse_subcommittee)
     })
   
+  # Remove tibble to flatten then recombine
   committee_df = discard(committee_tibbled, is_tibble) %>% 
     flatten_dfc() %>% 
     rename_with(.fn = ~str_c("committee_", .)) %>% 
@@ -212,18 +223,36 @@ parse_committee = function(committee){
   return(committee_df)
 }
 
+#' Parse subcommittee
+#'
+#' @param subcommittee subcommittee element
+#' 
+#' Flatten subcommittee activities to tibble
+#'
+#' @return
+#' @export
+#'
+#' @examples
 parse_subcommittee = function(subcommittee){
   modify_at(subcommittee, "activities", map_dfr, ~flatten_rename(.x, "activity")) %>% 
     flatten_dfc() %>% 
     rename_with(~str_c("subcommittee_", .))
 }
 
-parse_votes = function(recorded_votes){
-  modify_at(recorded_votes, "activities", map_dfr, ~flatten_rename(.x, "activity")) %>% 
-    flatten_dfc() %>% 
-    rename_with(~str_c("subcommittee_", .))
-}
 
+#' Parse vote roll
+#'
+#' @param vote vote_element
+#' @param logger logger object
+#' @param bill_type bill type
+#' @param bill_num bill number
+#' 
+#' Attempt to parse vote XML files, return empty tibble when reading XML fails
+#'
+#' @return
+#' @export
+#'
+#' @examples
 parse_vote_roll = function(vote, logger, bill_type, bill_num){
   
   tryCatch(
@@ -250,6 +279,16 @@ parse_vote_roll = function(vote, logger, bill_type, bill_num){
   
 }
 
+#' Parse action
+#'
+#' @param action action element
+#' 
+#' Flatten action source system and committee data separately then flatten the rest. 
+#'
+#' @return
+#' @export
+#'
+#' @examples
 parse_action = function(action){
   action %>% 
     modify_at("sourceSystem", ~flatten_rename(.x, "source")) %>% 
@@ -277,6 +316,16 @@ parse_sponsor = function(sponsor, role = "sponsor"){
     rename_with(.fn = ~str_c(role, "_", .), .cols = -starts_with(role))
 }
 
+#' XML nonempty nodes
+#'
+#' @param xml_node 
+#' 
+#' Find the XML nodes with no children, removing those which are empty
+#'
+#' @return
+#' @export
+#'
+#' @examples
 xml_nonempty_nodes = function(xml_node){
   xml_children(xml_node)[xml_length(xml_children(xml_node)) == 0] %>% 
     keep(~(xml_text(.) != ""))
