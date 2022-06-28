@@ -448,7 +448,7 @@ code_actions = function(actions_df, action_codes){
                                      min = coalesce(minute(actionTime), 0), 
                                      sec = coalesce(second(actionTime), 0), 
                                      tz = "US/Eastern"),
-           action_type = fct_explicit_na(
+           action_type_fct = fct_explicit_na(
              factor(action_type, 
                     levels = c("IntroReferral", "Committee", "Floor", 
                                "Discharge", "President", "BecameLaw"), 
@@ -465,7 +465,8 @@ code_actions = function(actions_df, action_codes){
     number_actions() %>% 
     # Create boolean for whether bill became law
     mutate(became_law = ("BecameLaw" %in% action_type), .after = actionTime) %>% 
-    ungroup()
+    ungroup() %>% 
+    select(-action_type_fct, -actionTime)
 }
 
 extract_bill_status = function(xml_file, 
