@@ -33,8 +33,7 @@ all_bills_coded = mutate(all_bills,
                          actions = future_map(actions, code_actions, action_codes = action_codes))
 toc()
 
-saveRDS(all_bills, here("data", "cleaned", "BILLSTATUS_117_House.Rds"))
-
 actions_unnested = unnest(all_bills_coded, actions)
 
-
+saveRDS(all_bills, here("data", "cleaned", "BILLSTATUS_117_House.Rds"))
+all_bills = readRDS(here("data", "cleaned", "BILLSTATUS_117_House.Rds"))
