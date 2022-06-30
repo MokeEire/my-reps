@@ -118,25 +118,25 @@ sample_col_group = if("latestAction_actionDate" %in% colnames(sample_bill_df)){
 }
 
 select(sample_bill_df, 
-       bill_id, title, introducedDate, where(negate(is_list)), createDate,
+       bill_id, title, where(negate(is_list)), introducedDate, createDate,
        -any_of("constitutionalAuthorityStatementText")) %>% 
   reactable(
     columns = list(
-      originChamber = colDef(name = "Chamber of Origin", width = 80),
-      bill_id = colDef(name = "ID", width = 70),
+      originChamber = colDef(name = "Chamber of Origin", width = 100),
+      bill_id = colDef(name = "ID", width = 80),
       congress = colDef(show = F, width = 60),
       billType = colDef(show = F,name = "Bill Type", width = 50),
       billNumber = colDef(show = F,name = "Bill #", width = 40),
-      title = colDef(name = "Bill Title", width = 420),
-      createDate = colDef(name = "Created", width = 80,
+      title = colDef(name = "Bill Title", maxWidth = 480),
+      createDate = colDef(show = F,name = "Created", width = 100,
                           format = colFormat(date = T, locales = "en-GB")),
-      latestAction_actionDate = colDef(name = "Date", width = 80,
+      latestAction_actionDate = colDef(name = "Date", width = 100,
                                        format = colFormat(date = T, locales = "en-GB")),
-      latestAction_text = colDef(name = "Action", width = 320),
+      latestAction_text = colDef(name = "Action", maxWidth = 360),
       version = colDef(show=F),
-      updateDate = colDef(name = "Updated", width = 80,
+      updateDate = colDef(show = F,name = "Updated", width = 100,
                           format = colFormat(date = T, locales = "en-GB")),
-      introducedDate = colDef(name = "Introduced", width = 80, 
+      introducedDate = colDef(name = "Introduced", width = 104, 
                               format = colFormat(date = T, locales = "en-GB"))
     ),
     columnGroups = sample_col_group

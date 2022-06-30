@@ -488,10 +488,8 @@ extract_bill_status = function(xml_file,
     setNames(
       map(singletons, xml_text), 
       xml_name(singletons))
-    
   )
 
-  # browser()
   # Extract non-singular base attributes ----
   ## Policy area
   policy_areas = as_list(xml_find_all(bill_xml, "policyArea/name")) %>% 
