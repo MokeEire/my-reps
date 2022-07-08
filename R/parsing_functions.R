@@ -435,7 +435,10 @@ number_actions = function(actions_df){
 #' @export
 #'
 #' @examples
-code_actions = function(actions_df, action_codes){
+code_actions = function(actions_df, 
+                        action_codes,
+                        action_order = c("IntroReferral", "Committee", "Floor", 
+                                         "Discharge", "President", "BecameLaw")){
   # TODO: 
   cols <- c(actionTime = NA_POSIXct_)
   
@@ -443,15 +446,15 @@ code_actions = function(actions_df, action_codes){
   add_column(actions_df, !!!cols[setdiff(names(cols), names(actions_df))]) %>% 
     # Create action timestamp
     mutate(action_ts = make_datetime(year = year(actionDate), 
-                                     month = month(actionDate), day = day(actionDate), 
+                                     month = month(actionDate), 
+                                     day = day(actionDate), 
                                      hour = coalesce(hour(actionTime), 0), 
                                      min = coalesce(minute(actionTime), 0), 
                                      sec = coalesce(second(actionTime), 0), 
                                      tz = "US/Eastern"),
            action_type_fct = fct_explicit_na(
              factor(action_type, 
-                    levels = c("IntroReferral", "Committee", "Floor", 
-                               "Discharge", "President", "BecameLaw"), 
+                    levels = action_order, 
                     ordered = T),
              na_level = "(Missing Action Type)"
            ),
