@@ -23,7 +23,7 @@ knit_print.data.frame = function(x, ...){
   knitr::knit_print(
     reactable::reactable(x,
                      theme = moke_rt(),
-                     compact = F, fullWidth = T,
+                     compact = F, fullWidth = T,height = "400px",
                      resizable = T),
     ...
     )
@@ -32,13 +32,14 @@ knit_print.data.frame = function(x, ...){
 action_codes = read_csv(here("data", "action_codes.csv"), col_types = "cc")
 
 all_bills = readRDS(here("data", "cleaned", "BILLSTATUS_117.Rds"))
+actions = readRDS(here("data", "cleaned", "BILLSTATUS_117_Actions.Rds"))
 ```
 
 # Actions
 
 Now, let's `unnest()` the actions data and see what action-level information looks like.
 
-```{r unnest-actions, cache=F}
+```{r}
 #| column: page
 
 (actions_unnested = select(all_bills, 
@@ -50,16 +51,38 @@ Now, let's `unnest()` the actions data and see what action-level information loo
   select(bill_id, title, introducedDate, starts_with("action"))
 ```
 
-::: callout-note
-## Assumption 
+In order to understand how legislation moves through congress, the chronological order of actions is important to know. `actionDate` and `actionTime` are the two fields which provide this information. Unfortunately, `actionTime` is missing in 90% of cases.
 
-Congressional actions follow the following order: \
+```{r}
+# Calculate how many actions are missing date and time data
+actions_unnested %>% 
+  summarise(
+    n_actions = n(),
+    across(c(actionDate, actionTime), 
+           list(n = ~sum(is.na(.), na.rm = T), 
+                pct = ~scales::percent(sum(is.na(.), na.rm = T)/n_actions)))
+  ) %>% 
+  # Pivot summary for table
+  pivot_longer(cols = starts_with("action"), 
+               names_to = c("field", ".value"), names_sep = "_")
+```
+
+Because time information is missing and often actions of different types occur on the same day, we need to make use `action_type` to identify the order of actions.
+
+::: callout-note
+## Assumption
+
+Congressional actions follow the following order:\
 Intro/Referral -\> Committee -\> Floor -\> Discharge, President -\> Become Law
-:::
 
 ```{r}
 actions_order = c("IntroReferral", "Committee", "Floor", 
                   "Discharge", "President", "BecameLaw")
+```
+:::
+
+```{r}
+
 (actions_coded = actions_unnested %>% 
     # Create action timestamp
     mutate(action_ts = make_datetime(year = year(actionDate), 
@@ -69,6 +92,7 @@ actions_order = c("IntroReferral", "Committee", "Floor",
                                      min = coalesce(minute(actionTime), 0), 
                                      sec = coalesce(second(actionTime), 0), 
                                      tz = "US/Eastern"),
+           # Set action type order
            action_type_fct = fct_explicit_na(
              factor(action_type, 
                     levels = actions_order, 
@@ -142,7 +166,7 @@ actions_coded %>%
        subtitle = "Actions as proportion of total bill activity, by bill type",
        y = NULL)+
   # facet_wrap(~billType, scales = "free_y")+
-  theme_moke(plots_pane = T, plot_margin = margin(20,20,20,20))+
+  theme_moke(plot_margin = margin(20,20,20,20))+
   # theme_minimal()+
   theme(legend.position = "top",
         axis.line.y = element_blank(),
