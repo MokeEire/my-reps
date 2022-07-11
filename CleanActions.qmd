@@ -322,19 +322,13 @@ actions_unnested %>%
 
 Below is a table of the action codes and their meaning
 
-+-------------+----------------------------------------------------------+----------------+
 | Action Code | Action                                                   | Given/Inferred |
-+=============+==========================================================+================+
+|-------------|----------------------------------------------------------|----------------|
 | `1000`      | Introduced in House                                      | Given          |
-+-------------+----------------------------------------------------------+----------------+
 | `B00100`    | Sponsor introductory remarks on measure                  | Inferred       |
-+-------------+----------------------------------------------------------+----------------+
 | `H11100`    | Referred to Committee                                    | Inferred       |
-+-------------+----------------------------------------------------------+----------------+
 | `H11210`    | Committee granted an extension for further consideration | Inferred       |
-+-------------+----------------------------------------------------------+----------------+
 | `Intro-H`   | Introduced in House                                      | Inferred       |
-+-------------+----------------------------------------------------------+----------------+
 
 : Intro/Referral Action Codes
 
@@ -400,23 +394,15 @@ actions_unnested %>%
 
 ```
 
-+---------------+-------------------------------------------+----------------+
-| Action Code   | Action                                    | Given/Inferred |
-+===============+===========================================+================+
-| `14000`       | Reported to Senate                        | Given          |
-+---------------+-------------------------------------------+----------------+
-| `14500`       | Senate committee discharged               | Given          |
-+---------------+-------------------------------------------+----------------+
-| `5000`        | Reported to House                         | Given          |
-+---------------+-------------------------------------------+----------------+
-| `5500`        | House committee discharged                | Given          |
-+---------------+-------------------------------------------+----------------+
-| `H12100`      | House committee reported original measure | Inferred       |
-+---------------+-------------------------------------------+----------------+
-| `H12200`      | Reported or amended by committee          | Inferred       |
-+---------------+-------------------------------------------+----------------+
-| `H12210`      | Supplemental report filed                 | Inferred       |
-+---------------+-------------------------------------------+----------------+
+| Action Code | Action                                    | Given/Inferred |
+|-------------|-------------------------------------------|----------------|
+| `14000`     | Reported to Senate                        | Given          |
+| `14500`     | Senate committee discharged               | Given          |
+| `5000`      | Reported to House                         | Given          |
+| `5500`      | House committee discharged                | Given          |
+| `H12100`    | House committee reported original measure | Inferred       |
+| `H12200`    | Reported or amended by committee          | Inferred       |
+| `H12210`    | Supplemental report filed                 | Inferred       |
 
 : Committee Action Codes
 
@@ -643,15 +629,11 @@ actions_unnested %>%
 
 ```
 
-+---------------+--------------------------------+----------------+
-| Action Code   | Action                         | Given/Inferred |
-+===============+================================+================+
-| `H12300`      | Committee discharged           | Inferred       |
-+---------------+--------------------------------+----------------+
-| `H17000`      | Motion to discharge committee  | Inferred       |
-+---------------+--------------------------------+----------------+
-| `H12490`      | Discharged from House Calendar | Inferred       |
-+---------------+--------------------------------+----------------+
+| Action Code | Action                         | Given/Inferred |
+|-------------|--------------------------------|----------------|
+| `H12300`    | Committee discharged           | Inferred       |
+| `H17000`    | Motion to discharge committee  | Inferred       |
+| `H12490`    | Discharged from House Calendar | Inferred       |
 
 : Discharge Action Codes
 
@@ -679,15 +661,11 @@ actions_unnested %>%
   # View("President Action Codes")
 ```
 
-+---------------+-----------------------------+----------------+
-| Action Code   | Action                      | Given/Inferred |
-+===============+=============================+================+
-| `28000`       | Presented to President      | Given          |
-+---------------+-----------------------------+----------------+
-| `E30000`      | Signed by President         | Inferred       |
-+---------------+-----------------------------+----------------+
-| `E40000`      | Became Public Law           | Inferred       |
-+---------------+-----------------------------+----------------+
+| Action Code | Action                 | Given/Inferred |
+|-------------|------------------------|----------------|
+| `28000`     | Presented to President | Given          |
+| `E30000`    | Signed by President    | Inferred       |
+| `E40000`    | Became Public Law      | Inferred       |
 
 : President Action Codes
 
@@ -716,11 +694,9 @@ actions_unnested %>%
   # View("Became Law Action Codes")
 ```
 
-+---------------+-----------------------------+----------------+
-| Action Code   | Action                      | Given/Inferred |
-+===============+=============================+================+
-| `36000`       | Became Public Law           | Given          |
-+---------------+-----------------------------+----------------+
+| Action Code | Action            | Given/Inferred |
+|-------------|-------------------|----------------|
+| `36000`     | Became Public Law | Given          |
 
 : Became Law Action Codes
 
@@ -750,40 +726,23 @@ actions_unnested %>%
   # View("Missing Type Action Codes")
 ```
 
-+-------------+-----------------------------------------------------------------------------------+----------------+
 | Action Code | Action                                                                            | Given/Inferred |
-+=============+===================================================================================+================+
+|-------------|-----------------------------------------------------------------------------------|----------------|
 | `H12410`    | Placed on the Union Calendar                                                      | Inferred       |
-+-------------+-----------------------------------------------------------------------------------+----------------+
 | `H12420`    | Placed on the House Calendar                                                      | Inferred       |
-+-------------+-----------------------------------------------------------------------------------+----------------+
 | `H41931`    | Result of motion to reconsider                                                    | Inferred       |
-+-------------+-----------------------------------------------------------------------------------+----------------+
 | `19500`     | Resolving differences                                                             | Inferred       |
-+-------------+-----------------------------------------------------------------------------------+----------------+
 | `H41610`    | Result of motion that the House agree to Senate amendment                         | Inferred       |
-+-------------+-----------------------------------------------------------------------------------+----------------+
 | `H82000`    | Move to table motion to reconsider/postpone consideration/refer                   | Inferred       |
-+-------------+-----------------------------------------------------------------------------------+----------------+
 | `H12440`    | Motion to place bill on consensus calendar                                        | Inferred       |
-+-------------+-----------------------------------------------------------------------------------+----------------+
 | `H41400`    | Previous question ordered pursuant to rule/previous House order                   | Inferred       |
-+-------------+-----------------------------------------------------------------------------------+----------------+
 | `H12430`    | Placed on the Private Calendar                                                    | Inferred       |
-+-------------+-----------------------------------------------------------------------------------+----------------+
 | `H40110`    | Request unanimous consent that the House to agree to Senate amendment(s)          | Inferred       |
-+-------------+-----------------------------------------------------------------------------------+----------------+
 | `H40140`    | Move to suspend rules and agree to Senate amendment(s)                            | Inferred       |
-+-------------+-----------------------------------------------------------------------------------+----------------+
 | `H40150`    | Move that the House agree to Senate amendment(s)                                  | Inferred       |
-+-------------+-----------------------------------------------------------------------------------+----------------+
 | `80000`     | Amendment failed by the House                                                     | Inferred       |
-+-------------+-----------------------------------------------------------------------------------+----------------+
 | `H30230`    | An objection was heard to the unanimous consent request to consider the measure.  | Inferred       |
-+-------------+-----------------------------------------------------------------------------------+----------------+
 | `H40130`    | House moved to agree to the Senate amendment, pursuant to previous special order. | Inferred       |
-+-------------+-----------------------------------------------------------------------------------+----------------+
 | `H41930`    | Move to reconsider the vote                                                       | Inferred       |
-+-------------+-----------------------------------------------------------------------------------+----------------+
 
 : Missing Action Type Action Codes
