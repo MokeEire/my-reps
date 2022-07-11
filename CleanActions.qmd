@@ -75,6 +75,8 @@ Because time information is missing and often actions of different types occur o
 Congressional actions follow the following order:\
 Intro/Referral -\> Committee -\> Floor -\> Discharge, President -\> Become Law
 
+Because actions can occur on the same date and we do not know the time, this assumption is useful to infer the order of actions.
+
 ```{r}
 actions_order = c("IntroReferral", "Committee", "Floor", 
                   "Discharge", "President", "BecameLaw")
