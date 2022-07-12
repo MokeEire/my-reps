@@ -38,12 +38,10 @@ all_bills = readRDS(here("data", "cleaned", "BILLSTATUS_117.Rds"))
 actions = readRDS(here("data", "cleaned", "BILLSTATUS_117_Actions.Rds"))
 ```
 
-# Actions
-
-Now, let's `unnest()` the actions data and see what action-level information looks like.
+First, let's `unnest()` the actions data and see what action-level information looks like.
 
 ```{r}
-#| column: page
+#| column: screen-inset
 
 (actions_unnested = select(all_bills, 
                            where(negate(is_list)), 
@@ -51,8 +49,23 @@ Now, let's `unnest()` the actions data and see what action-level information loo
    # Unnest actions
   unnest(actions)) %>% 
   head(20) %>% 
-  select(bill_id, title, introducedDate, starts_with("action"))
+  select(bill_id, title, introducedDate, 
+         actionDate, actionTime, 
+         action_type, actionCode,
+         action_text,
+         action_source_name, action_committee_name)
 ```
+
+# Understanding the data
+
+```{r}
+#| out.height: 400px
+
+glimpse(actions_unnested)
+
+```
+
+## Order of (legislative) operations
 
 In order to understand how legislation moves through congress, the chronological order of actions is important to know. `actionDate` and `actionTime` are the two fields which provide this information. Unfortunately, `actionTime` is missing in 90% of cases.
 
@@ -85,6 +98,35 @@ actions_order = c("IntroReferral", "Committee", "Floor",
                   "Discharge", "President", "BecameLaw")
 ```
 :::
+
+Let's see an example of this issue:
+
+```{r}
+#| label: actions-example
+#| column: page
+actions_unnested %>% 
+  # Create action timestamp
+  mutate(action_ts = make_datetime(year = year(actionDate), 
+                                   month = month(actionDate), 
+                                   day = day(actionDate), 
+                                   hour = coalesce(hour(actionTime), 0), 
+                                   min = coalesce(minute(actionTime), 0), 
+                                   sec = coalesce(second(actionTime), 0), 
+                                   tz = "US/Eastern")) %>% 
+    arrange(bill_id, action_ts) %>% 
+    select(-actionDate, actionTime) %>% 
+  add_count(bill_id, name = "actions") %>% 
+  filter(billType %in% c("HR", "S"),
+         actions > 10) %>%
+  relocate(action_ts, action_type, action_text, 
+                    actionCode,
+                    action_source_name, action_source_code,
+                    starts_with("action_committee"), .after = title) %>% 
+  select(bill_id, title, action_ts, 
+         action_type, actionCode,
+         action_text,
+         action_source_name, action_committee_name)
+```
 
 ```{r}
 
