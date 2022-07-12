@@ -4,6 +4,9 @@ date: "`r Sys.Date()`"
 format: 
   html:
     theme: litera
+    toc: true
+    code-fold: true
+    code-tools: true
 editor: visual
 ---
 
