@@ -305,8 +305,9 @@ The actions data is messy. There are a number of cases where actions are duplica
 
 ```{r }
 #| label:  action-codes
-actions_unnested %>% 
-  select(bill_id, actionDate, actionTime, action_type, actionCode, Action) %>% 
+(actions_joined = actions_coded %>% 
+  left_join(action_codes, by = c("actionCode" = "Code"))) %>% 
+  select(bill_id, action_ts, action_type, actionCode, Action) %>% 
   count(actionCode, Action) %>% 
   arrange(actionCode, Action)
 ```
@@ -315,7 +316,7 @@ How many of the actions are actually coded?
 
 ```{r }
 #| label:  action-code-hist
-actions_unnested %>% 
+actions_joined %>% 
   group_by(bill_id) %>%
   summarise(
     actions = n(),
@@ -341,7 +342,7 @@ Which action types have action codes?
 
 ```{r}
 #| label: action-codes-summary
-actions_unnested %>% 
+actions_joined %>% 
   group_by(action_type) %>% 
   summarise(
     n = n(),
@@ -354,14 +355,14 @@ actions_unnested %>%
 
 ```{r }
 #| label: intro-action-codes
-actions_unnested %>% 
+actions_joined %>% 
   filter(action_type == "IntroReferral") %>% 
   count(action_source_name, actionCode, sort = T)
 ```
 
 ```{r }
 #| label: intro-actions
-actions_unnested %>% 
+actions_joined %>% 
   filter(action_type == "IntroReferral") %>% 
   count(actionCode, Action, action_text) %>% 
   arrange(actionCode, desc(n))# %>% 
@@ -386,7 +387,7 @@ Is there a difference between the `actionCode` **1000** and **Intro-H**?
 #| label: compare-intro
 actions_to_compare = c("1000", "Intro-H")
 
-actions_unnested %>% 
+actions_joined %>% 
   filter(actionCode %in% actions_to_compare) %>% 
   add_count(bill_id) %>% 
   filter(n>1) %>% 
@@ -399,7 +400,7 @@ Do these two actions occur for every bill?
 
 ```{r }
 #| label: intro-code-comparison
-actions_unnested %>% 
+actions_joined %>% 
   filter(actionCode %in% actions_to_compare) %>% 
   count(bill_id, actionCode) %>% 
   pivot_wider(id_cols = bill_id, names_from = actionCode, values_from = n, values_fill = 0) %>% 
@@ -412,7 +413,7 @@ So we can remove `Intro-H` actions without losing any information. This reduces 
 
 ```{r}
 #| label: intro-code-dedupe
-actions_unnested %>% 
+actions_joined %>% 
   select(bill_id, title, introducedDate, 
          action_ts, action_type, actionCode, action_text,
          starts_with("action_source"), starts_with("action_committee")) %>% 
@@ -426,14 +427,14 @@ actions_unnested %>%
 
 ```{r }
 #| label: committee-action-codes
-actions_unnested %>% 
+actions_joined %>% 
   filter(action_type == "Committee") %>% 
   count(action_source_name, actionCode, sort = T)
 ```
 
 ```{r }
 #| label: committee-actions
-actions_unnested %>% 
+actions_joined %>% 
   filter(action_type == "Committee") %>% 
   count(actionCode, Action, action_text) %>% 
   arrange(actionCode, desc(n)) %>% 
@@ -478,14 +479,14 @@ Committee actions which do not have an action code include the following types o
 
 ```{r }
 #| label: floor-action-codes
-actions_unnested %>% 
+actions_joined %>% 
   filter(action_type == "Floor") %>% 
   count(action_source_name, actionCode, sort = T)
 ```
 
 ```{r }
 #| label: floor-actions
-actions_unnested %>% 
+actions_joined %>% 
   filter(action_type == "Floor") %>% 
   add_count(actionCode, name = "actionCode_count") %>% 
   # Select distinct action codes and their descriptions
@@ -614,7 +615,7 @@ actions_unnested %>%
 
 ```{r }
 #| label: floor-missing-codes
-actions_unnested %>% 
+actions_joined %>% 
   filter(action_type == "Floor", is.na(actionCode)) %>% 
   count(action_text, sort = T)# %>% 
   # View("Floor Actions missing codes")
@@ -656,14 +657,14 @@ Floor actions which do not have an action code appear to be Senate actions, but 
 
 ```{r}
 #| label: discharge-action-codes
-actions_unnested %>% 
+actions_joined %>% 
   filter(action_type == "Discharge") %>% 
   count(action_source_name, actionCode, sort = T)
 ```
 
 ```{r }
 #| label: discharge-actions
-actions_unnested %>% 
+actions_joined %>% 
   filter(action_type == "Discharge") %>% 
   add_count(actionCode, name = "actionCode_count") %>% 
   # Select distinct action codes and their descriptions
@@ -689,14 +690,14 @@ actions_unnested %>%
 
 ```{r }
 #| label: president-action-codes
-actions_unnested %>% 
+actions_joined %>% 
   filter(action_type == "President") %>% 
   count(action_source_name, actionCode, sort = T)
 ```
 
 ```{r }
 #| label: president-actions
-actions_unnested %>% 
+actions_joined %>% 
   filter(action_type == "President") %>% 
   add_count(actionCode, name = "actionCode_count") %>% 
   # Select distinct action codes and their descriptions
@@ -721,7 +722,7 @@ actions_unnested %>%
 
 ```{r }
 #| label:  becamelaw-action-codes
-actions_unnested %>% 
+actions_joined %>% 
   filter(action_type == "BecameLaw") %>% 
   count(action_source_name, actionCode, sort = T)
 
@@ -729,7 +730,7 @@ actions_unnested %>%
 
 ```{r}
 #| label: becamelaw-actions
-actions_unnested %>% 
+actions_joined %>% 
   filter(action_type == "BecameLaw") %>% 
   add_count(actionCode, name = "actionCode_count") %>% 
   # Select distinct action codes and their descriptions
@@ -752,7 +753,7 @@ actions_unnested %>%
 
 ```{r }
 #| label:  missing-actions
-actions_unnested %>% 
+actions_joined %>% 
   filter(action_type == "(Missing Action Type)") %>% 
   count(action_source_name, actionCode) %>% 
   arrange(actionCode, desc(n))
@@ -761,7 +762,7 @@ actions_unnested %>%
 
 ```{r}
 #| label:  missing-action-codes
-actions_unnested %>% 
+actions_joined %>% 
   filter(action_type == "(Missing Action Type)") %>% 
   add_count(actionCode, name = "actionCode_count") %>% 
   # Select distinct action codes and their descriptions
