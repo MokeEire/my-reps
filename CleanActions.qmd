@@ -26,7 +26,10 @@ knit_print.data.frame = function(x, ...){
   knitr::knit_print(
     reactable::reactable(x,
                      theme = moke_rt(),
-                     compact = F, fullWidth = T,height = "400px",
+                     compact = F, 
+                     # fullWidth = T,
+                     pagination = F,
+                     height = if(nrow(x) >= 10) "400px" else "auto",
                      resizable = T),
     ...
     )
@@ -160,8 +163,6 @@ actions_unnested %>%
                     starts_with("action_committee"), .after = title)) %>% 
   select(title, bill_id, starts_with("action"))
 ```
-
-## Action Types
 
 What action types are most common?
 
