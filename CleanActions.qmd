@@ -227,6 +227,7 @@ Can we get an idea of the order of actions based on their average position in th
 
 ```{r}
 #| label:  action-order-summary
+#| eval: false
 (action_order_summary = actions_coded %>% 
   group_by(billType, action_type) %>% 
   summarise(across(action_number, list(min = min, 
@@ -238,6 +239,7 @@ Can we get an idea of the order of actions based on their average position in th
 
 ```{r}
 #| label:  action-order-boxplot
+#| eval: false
 action_order_summary %>%
   pivot_longer(
     cols = starts_with("action_n"), 
@@ -264,6 +266,7 @@ action_order_summary %>%
 
 ```{r }
 #| label:  action-order-boxplot2
+#| eval: false
 actions_unnested %>% 
   group_by(action_type) %>% 
   mutate(mean_num = mean(action_number)) %>% 
