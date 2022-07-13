@@ -563,7 +563,8 @@ extract_bill_status = function(xml_file,
     # Coerce nodes to list
     committees_list = as_list(committees)
     
-    committees_df = map_dfr(committees_list, parse_committee)
+    committees_df = map_dfr(committees_list, parse_committee) %>% 
+      janitor::clean_names()
     
     bill_df$committees = list(committees_df)
     
@@ -592,7 +593,8 @@ extract_bill_status = function(xml_file,
                              logger = logger, 
                              bill_type = bill_df$billType,
                              bill_num = bill_df$billNumber),
-             roll_found = map_lgl(vote_roll, ~(nrow(.) > 0)))
+             roll_found = map_lgl(vote_roll, ~(nrow(.) > 0))) %>% 
+      janitor::clean_names()
     
     bill_df$votes = list(vote_rolls_df)
   } else {
@@ -616,7 +618,8 @@ extract_bill_status = function(xml_file,
     # Coerce nodes to list
     actions_df = as_list(bill_actions) %>% 
       map_dfr(parse_action) %>% 
-      type_convert(col_types = col_specs$actions)
+      type_convert(col_types = col_specs$actions) %>% 
+      janitor::clean_names()
     
     bill_df$actions = list(actions_df)
     
@@ -655,7 +658,8 @@ extract_bill_status = function(xml_file,
 
     # Coerce nodes to list
     sponsors_df = map(bill_sponsors, as_list) %>% 
-      map_dfr(parse_sponsor)
+      map_dfr(parse_sponsor) %>% 
+      janitor::clean_names()
     
     bill_df$sponsors = list(sponsors_df)
   } else {
@@ -674,7 +678,8 @@ extract_bill_status = function(xml_file,
     bill_cosponsors = xml_find_all(cosponsors_node, "item")
     # Coerce nodes to list
     cosponsors_df = map(bill_cosponsors, as_list) %>% 
-      map_dfr(parse_sponsor, role = "cosponsor")
+      map_dfr(parse_sponsor, role = "cosponsor") %>% 
+      janitor::clean_names()
     
     bill_df$cosponsors = list(type_convert(cosponsors_df, col_types = col_specs$cosponsors))
   } else {
@@ -682,8 +687,9 @@ extract_bill_status = function(xml_file,
   }
   
   finished_df = as_tibble(bill_df) %>% 
+    janitor::clean_names() %>% 
     # Combine bill type and number to create an ID
-    unite(bill_id, billType, billNumber, sep = "-", remove = F)
+    unite(bill_id, bill_type, bill_number, sep = "-", remove = F)
   
   log_info(logger, 
             bill_type = bill_df$billType,
@@ -691,7 +697,7 @@ extract_bill_status = function(xml_file,
             "Complete")
   
   mutate(finished_df,
-         across(ends_with("Date"), as_datetime),
+         across(ends_with("date"), as_datetime),
          actions = map(actions, mutate, 
                        action_type = factor(action_type, 
                                             levels = c("IntroReferral", "Committee", "Floor", 
