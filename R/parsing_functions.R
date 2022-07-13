@@ -316,7 +316,7 @@ parse_sponsor = function(sponsor, role = "sponsor"){
     rename_with(.fn = ~str_c(role, "_", .), .cols = -starts_with(role))
 }
 
-#' XML nonempty nodes
+#' XML singular nodes
 #'
 #' @param xml_node 
 #' 
@@ -326,9 +326,16 @@ parse_sponsor = function(sponsor, role = "sponsor"){
 #' @export
 #'
 #' @examples
-xml_nonempty_nodes = function(xml_node){
-  xml_children(xml_node)[xml_length(xml_children(xml_node)) == 0] %>% 
-    keep(~(xml_text(.) != ""))
+xml_singular_nodes = function(xml_node){
+  
+  # Return child nodes of current node
+  child_nodes = xml_children(xml_node)
+  
+  # Select child nodes with 0 children
+  zero_length_child_nodes = child_nodes[xml_length(child_nodes) == 0]
+  
+  # Keep the nodes which are not empty strings
+  keep(zero_length_child_nodes, ~(xml_text(.) != ""))
 }
 
 # attribute_tibble_templates = list(
@@ -484,7 +491,7 @@ extract_bill_status = function(xml_file,
   
   bill_xml = xml_child(read_xml(xml_file), "bill")
   
-  singletons = xml_nonempty_nodes(bill_xml)
+  singletons = xml_singular_nodes(bill_xml)
   # browser()
   # Singletons strewn together
   bill_df = flatten_dfc(
