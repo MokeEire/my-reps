@@ -259,7 +259,6 @@ parse_vote_roll = function(vote, logger, bill_type, bill_num){
     {
       vote_xml = read_xml(vote, options = "RECOVER")
       vote_data = xml_find_all(vote_xml, "vote-data")
-      vote_data = xml_find_all(vote_xml, "vote-data")
       
       vote_list = as_list(vote_data)
       
