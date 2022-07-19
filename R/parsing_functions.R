@@ -544,13 +544,7 @@ extract_bill_status = function(xml_file,
            bill_num = bill_df$billNumber,
            "Reading XML")
 
-  xpaths = xml_children(bill_xml) %>% 
-      map_chr(xml_path)
-  
-  bill_nodesets = map(xpaths, ~ xml_find_all(bill_xml, xpath = .x)) %>% 
-    set_names(map_chr(., xml_name))
-  
-  # browser()
+
   # Committees ---------
   log_debug(logger, 
            bill_type = bill_df$billType,
