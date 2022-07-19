@@ -554,11 +554,10 @@ extract_bill_status = function(xml_file,
            bill_num = bill_df$billNumber,
            "Parsing committees")
   
-  bill_committees = xml_find_all(bill_nodesets[["committees"]], "billCommittees")
+  committees = xml_find_all(bill_xml, "//bill/committees/billCommittees/item")
   
-  if("committees" %in% nested_attributes && xml_length(bill_committees)>0){
+  if("committees" %in% nested_attributes && length(committees)>0){
 
-    committees = xml_find_all(bill_committees, "item")
     # Coerce nodes to list
     committees_list = as_list(committees)
     
@@ -577,12 +576,12 @@ extract_bill_status = function(xml_file,
            bill_num = bill_df$billNumber,
            "Parsing votes")
   
-  votes_node = bill_nodesets[["recordedVotes"]]
-  if("votes" %in% nested_attributes && xml_length(votes_node)>0 && get_votes){
+  votes_node = xml_find_all(bill_xml, "//bill/recordedVotes/recordedVote")
+  
+  if("votes" %in% nested_attributes && length(votes_node)>0 && get_votes){
     
-    bill_votes = xml_find_all(votes_node, "recordedVote")
     # Coerce nodes to list
-    votes_list = as_list(bill_votes)
+    votes_list = as_list(votes_node)
 
     votes_df = map_dfr(votes_list, flatten_dfc)
 
@@ -605,11 +604,12 @@ extract_bill_status = function(xml_file,
            bill_type = bill_df$billType,
            bill_num = bill_df$billNumber,
            "Parsing actions")
-  actions_node = bill_nodesets[["actions"]]
-  if("actions" %in% nested_attributes && xml_length(actions_node)>0){
-    bill_actions = xml_find_all(actions_node, "item")
-    
-    bill_action_counts = as_list(xml_find_all(actions_node, "./*[not(self::item)]")) %>% 
+  
+  bill_actions = xml_find_all(bill_xml, "//bill/actions/item")
+  
+  if("actions" %in% nested_attributes && length(bill_actions)>0){
+
+    bill_action_counts = as_list(xml_find_all(bill_xml, "//bill/actions/*[not(self::item)]")) %>% 
       map_dfc(flatten_dfc) %>% 
       rename_with(.cols = everything(), ~str_c("actions_", .)) %>% 
       pivot_longer(everything(), names_to = "action", names_prefix = "actions_", values_to = "count")
@@ -652,11 +652,12 @@ extract_bill_status = function(xml_file,
            bill_num = bill_df$billNumber,
            "Parsing sponsors")
   
-  bill_sponsors = xml_find_all(bill_nodesets[["sponsors"]], "item")
-  if("sponsors" %in% nested_attributes && xml_length(bill_sponsors)>0){
+  bill_sponsors = xml_find_all(bill_xml, "//bill/sponsors/item")
+  
+  if("sponsors" %in% nested_attributes && length(bill_sponsors)>0){
 
     # Coerce nodes to list
-    sponsors_df = map(bill_sponsors, as_list) %>% 
+    sponsors_df = as_list(bill_sponsors) %>% 
       map_dfr(parse_sponsor) %>% 
       janitor::clean_names()
     
@@ -671,12 +672,13 @@ extract_bill_status = function(xml_file,
            bill_type = bill_df$billType,
            bill_num = bill_df$billNumber,
            "Parsing cosponsors")
-  cosponsors_node = bill_nodesets[["cosponsors"]]
-  if("cosponsors" %in% nested_attributes && xml_length(cosponsors_node)>0){
+  
+  bill_cosponsors = xml_find_all(bill_xml, "//bill/cosponsors/item")
+  
+  if("cosponsors" %in% nested_attributes && length(bill_cosponsors)>0){
     
-    bill_cosponsors = xml_find_all(cosponsors_node, "item")
     # Coerce nodes to list
-    cosponsors_df = map(bill_cosponsors, as_list) %>% 
+    cosponsors_df = as_list(bill_cosponsors) %>% 
       map_dfr(parse_sponsor, role = "cosponsor") %>% 
       janitor::clean_names()
     
