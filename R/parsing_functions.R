@@ -490,7 +490,8 @@ extract_bill_status = function(xml_file,
   
   bill_xml = xml_child(read_xml(xml_file), "bill")
   
-  singletons = xml_singular_nodes(bill_xml)
+  # singletons = xml_singular_nodes(bill_xml)
+  singletons = xml_find_all(bill_xml, "//bill/*[count(./*) = 0 and not(string-length(.) = 0)]")
   # browser()
   # Singletons strewn together
   bill_df = flatten_dfc(
