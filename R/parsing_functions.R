@@ -181,9 +181,14 @@ silent_convert = function(df, ...){
   suppressWarnings(suppressMessages(readr::type_convert(df, ...)))
 }
 
-flatten_rename = function(list_to_flatten, 
-                          name_prefix = "prefix"){
-  rename_with(flatten_dfc(list_to_flatten), ~str_c(name_prefix, "_", .))
+flatten_dfc_rename = function(list_to_flatten, 
+                              name_prefix = "prefix"){
+  rename_with(
+    .data = flatten_dfc(list_to_flatten), 
+    .fn = ~str_c(name_prefix, "_", .),
+    # Exclude columns which already start with the prefix
+    .cols = -starts_with(name_prefix)
+  )
 }
 
 format_date_api = function(date){
@@ -208,7 +213,7 @@ format_date_api = function(date){
 #' @examples
 parse_committee = function(committee){
   committee_tibbled = committee %>% 
-    modify_at("activities", map_dfr, ~flatten_rename(.x, "committee_activity")) %>% 
+    modify_at("activities", map_dfr, ~flatten_dfc_rename(.x, "committee_activity")) %>% 
     modify_at("subcommittees", function(subcommittee){
       map_dfr(subcommittee, parse_subcommittee)
     })
@@ -234,9 +239,8 @@ parse_committee = function(committee){
 #'
 #' @examples
 parse_subcommittee = function(subcommittee){
-  modify_at(subcommittee, "activities", map_dfr, ~flatten_rename(.x, "activity")) %>% 
-    flatten_dfc() %>% 
-    rename_with(~str_c("subcommittee_", .))
+  modify_at(subcommittee, "activities", map_dfr, ~flatten_dfc_rename(.x, "activity")) %>% 
+    flatten_dfc_rename("subcommittee")
 }
 
 
@@ -290,12 +294,11 @@ parse_vote_roll = function(vote, logger, bill_type, bill_num){
 #' @examples
 parse_action = function(action){
   action %>% 
-    modify_at("sourceSystem", ~flatten_rename(.x, "source")) %>% 
+    modify_at("sourceSystem", ~flatten_dfc_rename(.x, "source")) %>% 
     modify_at("committees", function(committee){
-      map_dfr(committee, ~flatten_rename(.x, "committee"))
+      map_dfr(committee, ~flatten_dfc_rename(.x, "committee"))
     }) %>% 
-    flatten_dfc() %>% 
-    rename_with(.fn = ~str_c("action_", .), .cols = -starts_with("action"))
+    flatten_dfc_rename("action")
 }
 
 parse_amendment = function(amendment){
@@ -310,9 +313,8 @@ parse_amendment = function(amendment){
 
 parse_sponsor = function(sponsor, role = "sponsor"){
   sponsor %>% 
-    modify_at("identifiers", ~flatten_rename(.x, "identifiers")) %>% 
-    flatten_dfc() %>% 
-    rename_with(.fn = ~str_c(role, "_", .), .cols = -starts_with(role))
+    modify_at("identifiers", ~flatten_dfc_rename(.x, "identifiers")) %>% 
+    flatten_dfc_rename(name_prefix = role)
 }
 
 #' XML singular nodes
