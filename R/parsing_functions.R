@@ -213,15 +213,14 @@ format_date_api = function(date){
 #' @examples
 parse_committee = function(committee){
   committee_tibbled = committee %>% 
-    modify_at("activities", map_dfr, ~flatten_dfc_rename(.x, "committee_activity")) %>% 
-    modify_at("subcommittees", function(subcommittee){
+    map_at("activities", map_dfr, ~flatten_dfc_rename(.x, "committee_activity")) %>% 
+    map_at("subcommittees", function(subcommittee){
       map_dfr(subcommittee, parse_subcommittee)
     })
   
   # Remove tibble to flatten then recombine
   committee_df = discard(committee_tibbled, is_tibble) %>% 
-    flatten_dfc() %>% 
-    rename_with(.fn = ~str_c("committee_", .)) %>% 
+    flatten_dfc_rename("committee") %>% 
     mutate(committee_activities = list(committee_tibbled$activities),
            subcommittee_activities = list(committee_tibbled$subcommittees))
   
@@ -239,7 +238,7 @@ parse_committee = function(committee){
 #'
 #' @examples
 parse_subcommittee = function(subcommittee){
-  modify_at(subcommittee, "activities", map_dfr, ~flatten_dfc_rename(.x, "activity")) %>% 
+  map_at(subcommittee, "activities", map_dfr, ~flatten_dfc_rename(.x, "activity")) %>% 
     flatten_dfc_rename("subcommittee")
 }
 
@@ -294,8 +293,8 @@ parse_vote_roll = function(vote, logger, bill_type, bill_num){
 #' @examples
 parse_action = function(action){
   action %>% 
-    modify_at("sourceSystem", ~flatten_dfc_rename(.x, "source")) %>% 
-    modify_at("committees", function(committee){
+    map_at("sourceSystem", ~flatten_dfc_rename(.x, "source")) %>% 
+    map_at("committees", function(committee){
       map_dfr(committee, ~flatten_dfc_rename(.x, "committee"))
     }) %>% 
     flatten_dfc_rename("action")
@@ -313,7 +312,7 @@ parse_amendment = function(amendment){
 
 parse_sponsor = function(sponsor, role = "sponsor"){
   sponsor %>% 
-    modify_at("identifiers", ~flatten_dfc_rename(.x, "identifiers")) %>% 
+    map_at("identifiers", ~flatten_dfc_rename(.x, "identifiers")) %>% 
     flatten_dfc_rename(name_prefix = role)
 }
 
