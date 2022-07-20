@@ -260,13 +260,36 @@ parse_vote_roll = function(vote, logger, bill_type, bill_num){
   
   tryCatch(
     {
-      vote_xml = read_xml(vote, options = "RECOVER")
-      vote_data = xml_find_all(vote_xml, "vote-data")
+      vote_xml = read_xml(vote)
+
+      # Vote data
+      legislators_list = as_list(xml_find_all(vote_xml, "vote-data/recorded-vote"))
+      legislator_vote_df = legislators_list %>% 
+        # Modify one level deeper using map_at to target legislator elements
+        map(map_at, "legislator", attributes) %>% 
+        map_dfr(flatten_dfc)
       
-      vote_list = as_list(vote_data)
+      # Vote metadata
+      vote_singular_nodes = xml_find_all(vote_xml, "vote-metadata/*[count(./*) = 0]")
       
-      flatten_dfr(vote_list) %>% 
-        unnest(everything())
+      (vote_df = as_list(vote_singular_nodes) %>% 
+          # as_list() doesn't retain element names so we set names ourselves
+          setNames(xml_name(vote_singular_nodes)) %>% 
+          janitor::clean_names() %>% 
+          flatten_dfc())
+      
+      # Vote totals
+      vote_totals_by_party = xml_find_all(vote_xml, "vote-metadata/vote-totals/totals-by-party")
+      party_vote_totals_df = as_list(vote_totals_by_party) %>% 
+        map_dfr(flatten_dfc) %>% 
+        janitor::clean_names() %>% 
+        type_convert()
+      
+      vote_df %>% 
+        mutate(legislator_votes = list(legislator_vote_df),
+               party_votes = list(party_vote_totals_df)) %>% 
+        janitor::clean_names()
+      
     },
     error=function(cond) {
       log_info(logger, 
