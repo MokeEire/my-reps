@@ -257,7 +257,7 @@ parse_subcommittee = function(subcommittee){
 #'
 #' @examples
 parse_vote_roll = function(vote, logger, bill_type, bill_num){
-  
+
   tryCatch(
     {
       vote_xml = read_xml(vote)
@@ -267,7 +267,8 @@ parse_vote_roll = function(vote, logger, bill_type, bill_num){
       legislator_vote_df = legislators_list %>% 
         # Modify one level deeper using map_at to target legislator elements
         map(map_at, "legislator", attributes) %>% 
-        map_dfr(flatten_dfc)
+        map_dfr(flatten_dfc) %>% 
+        janitor::clean_names()
       
       # Vote metadata
       vote_singular_nodes = xml_find_all(vote_xml, "vote-metadata/*[count(./*) = 0]")
@@ -276,7 +277,9 @@ parse_vote_roll = function(vote, logger, bill_type, bill_num){
           # as_list() doesn't retain element names so we set names ourselves
           setNames(xml_name(vote_singular_nodes)) %>% 
           flatten_dfc() %>% 
-        janitor::clean_names()
+        janitor::clean_names() %>% 
+        # Remove duplicated columns
+        select(-any_of(c("congress", "chamber")))
       
       # Vote totals
       vote_totals_by_party = xml_find_all(vote_xml, "vote-metadata/vote-totals/totals-by-party")
