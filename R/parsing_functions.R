@@ -272,11 +272,11 @@ parse_vote_roll = function(vote, logger, bill_type, bill_num){
       # Vote metadata
       vote_singular_nodes = xml_find_all(vote_xml, "vote-metadata/*[count(./*) = 0]")
       
-      (vote_df = as_list(vote_singular_nodes) %>% 
+      vote_df = as_list(vote_singular_nodes) %>% 
           # as_list() doesn't retain element names so we set names ourselves
           setNames(xml_name(vote_singular_nodes)) %>% 
-          janitor::clean_names() %>% 
-          flatten_dfc())
+          flatten_dfc() %>% 
+        janitor::clean_names()
       
       # Vote totals
       vote_totals_by_party = xml_find_all(vote_xml, "vote-metadata/vote-totals/totals-by-party")
