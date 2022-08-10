@@ -25,7 +25,7 @@ all_files = flatten_chr(bill_files)
 
 # Extract bills from files ------------------------------------------------
 
-tic(str_c("Extract ", sum(map_dbl(bill_files, length)), " bills"))
+tic(str_c("Extract ", length(all_files), " bills"))
 all_bills = future_map_dfr(all_files, extract_bill_status, log_types = "console")
 toc()
 
