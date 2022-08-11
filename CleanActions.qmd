@@ -37,11 +37,12 @@ knit_print.data.frame = function(x, ...){
 
 action_codes = read_csv(here("data", "action_codes.csv"), col_types = "cc")
 
+# Load cleaned R objects
 all_bills = readRDS(here("data", "cleaned", "BILLSTATUS_117.Rds"))
 actions = readRDS(here("data", "cleaned", "BILLSTATUS_117_Actions.Rds"))
 ```
 
-First, let's `unnest()` the actions data and see what action-level information looks like.
+First, let's `unnest()` actions from the bills data and see what action-level information looks like.
 
 ```{r}
 #| column: screen-inset
@@ -52,9 +53,9 @@ First, let's `unnest()` the actions data and see what action-level information l
    # Unnest actions
   unnest(actions)) %>% 
   head(20) %>% 
-  select(bill_id, title, introducedDate, 
-         actionDate, actionTime, 
-         action_type, actionCode,
+  select(bill_id, title, introduced_date, 
+         action_date, action_time, 
+         action_type, action_code,
          action_text,
          action_source_name, action_committee_name)
 ```
@@ -62,241 +63,49 @@ First, let's `unnest()` the actions data and see what action-level information l
 # Understanding the data
 
 ```{r}
-
-glimpse(actions_unnested)
-
+glimpse(actions_unnested, width = 80)
 ```
 
-## Order of (legislative) operations
+## Overview
 
-In order to understand how legislation moves through congress, the chronological order of actions is important to know. `actionDate` and `actionTime` are the two fields which provide this information. Unfortunately, `actionTime` is missing in 90% of cases.
+How many bills do we have in the data?
 
 ```{r}
-# Calculate how many actions are missing date and time data
-actions_unnested %>% 
-  summarise(
-    n_actions = n(),
-    across(c(actionDate, actionTime), 
-           list(n = ~sum(is.na(.), na.rm = T), 
-                pct = ~scales::percent(sum(is.na(.), na.rm = T)/n_actions)))
-  ) %>% 
-  # Pivot summary for table
-  pivot_longer(cols = starts_with("action"), 
-               names_to = c("field", ".value"), names_sep = "_")
+n_distinct(actions_unnested$bill_id)
 ```
 
-Because time information is missing and often actions of different types occur on the same day, we need to make use `action_type` to identify the order of actions.
-
-::: callout-note
-## Assumption
-
-Congressional actions follow the following order:\
-Intro/Referral -\> Committee -\> Floor -\> Discharge, President -\> Become Law
-
-Because actions can occur on the same date and we do not know the time, this assumption is useful to infer the order of actions.
+How many actions per bill?
 
 ```{r}
-actions_order = c("IntroReferral", "Committee", "Floor", 
-                  "Discharge", "President", "BecameLaw")
-```
-:::
-
-Let's see an example of this issue:
-
-```{r}
-#| label: actions-example
-#| column: page
-actions_unnested %>% 
-  # Create action timestamp
-  mutate(action_ts = make_datetime(year = year(actionDate), 
-                                   month = month(actionDate), 
-                                   day = day(actionDate), 
-                                   hour = coalesce(hour(actionTime), 0), 
-                                   min = coalesce(minute(actionTime), 0), 
-                                   sec = coalesce(second(actionTime), 0), 
-                                   tz = "US/Eastern")) %>% 
-    arrange(bill_id, action_ts) %>% 
-    select(-actionDate, actionTime) %>% 
-  add_count(bill_id, name = "actions") %>% 
-  filter(billType %in% c("HR", "S"),
-         actions > 10) %>%
-  relocate(action_ts, action_type, action_text, 
-                    actionCode,
-                    action_source_name, action_source_code,
-                    starts_with("action_committee"), .after = title) %>% 
-  select(bill_id, title, action_ts, 
-         action_type, actionCode,
-         action_text,
-         action_source_name, action_committee_name)
+# Count rows for each bill
+add_count(actions_unnested, bill_id, name = "actions") %>% 
+  # Count bills by the number of actions
+  count(actions, wt = n_distinct(bill_id))
 ```
 
 ```{r}
-
-(actions_coded = actions_unnested %>% 
-    # Create action timestamp
-    mutate(action_ts = make_datetime(year = year(actionDate), 
-                                     month = month(actionDate), 
-                                     day = day(actionDate), 
-                                     hour = coalesce(hour(actionTime), 0), 
-                                     min = coalesce(minute(actionTime), 0), 
-                                     sec = coalesce(second(actionTime), 0), 
-                                     tz = "US/Eastern"),
-           # Set action type order
-           action_type_fct = fct_explicit_na(
-             factor(action_type, 
-                    levels = actions_order, 
-                    ordered = T),
-             na_level = "(Missing Action Type)"
-           ),
-           action_source_name = factor(action_source_name,
-                                       levels = c("Library of Congress", 
-                                                  "House floor actions", 
-                                                  "House committee actions",
-                                                  "Senate"),
-                                       ordered = T)) %>% 
-    arrange(bill_id, action_ts) %>% 
-    select(-actionDate, actionTime) %>% 
-    relocate(action_ts, action_type, action_text, 
-                    actionCode, action_type_fct,
-                    action_source_name, action_source_code,
-                    starts_with("action_committee"), .after = title)) %>% 
-  select(title, bill_id, starts_with("action"))
-```
-
-What action types are most common?
-
-```{r}
-#| label: count-action-type
-actions_coded %>%
-  count(billType, action_type) %>% 
-  arrange(billType, desc(n)) %>% 
-  pivot_wider(names_from = action_type, values_from = n, values_fill = 0)
-```
-
-Or in a graph:
-
-```{r}
-#| label: action-type-prop
-#| fig.width: 10
-#| fig.height: 6
-actions_coded %>%
-  count(billType, action_type) %>% 
-  arrange(billType, n) %>% 
-  # Calculate % of bill's actions
-  group_by(billType) %>% 
-  mutate(pct = n/sum(n),
-         pct_lab = if_else(pct > .08, scales::percent(pct, accuracy = .1), NA_character_)) %>% 
-  ungroup() %>%
-  # Plot
-  ggplot(., aes(y = billType, fill = fct_rev(action_type)))+
-  geom_col(aes(x = n), 
-           colour = my_col_pal[1], width = .6, 
-           position = position_fill())+
-  geom_text(aes(x = n, label = pct_lab), 
-           position = position_fill(vjust = .5),
-           family = "Heebo Light", fontface = "bold",
-           colour = my_col_pal[1],
-           size = 5)+
-  scale_x_continuous(name = NULL, 
-                     labels = scales::percent, 
-                     breaks = scales::breaks_pretty(),
-                     expand = expansion(add = .01))+
-  scale_fill_manual(name = "Action\nType", 
-                    values = viz_colours[length(unique(actions_unnested$action_type)):1],
-                    guide = guide_legend(title.position = "left", 
-                                         title.hjust = .5,
-                                         label.position = "top", 
-                                         keywidth = unit(2.5, "cm"),
-                                         #direction = "horizontal", 
-                                         nrow = 1, reverse = T))+
-  labs(title = "Most common congressional actions taken on bills",
-       subtitle = "Actions as proportion of total bill activity, by bill type",
-       y = NULL)+
-  # facet_wrap(~billType, scales = "free_y")+
-  theme_moke(plot_margin = margin(20,20,20,20))+
-  # theme_minimal()+
-  theme(legend.position = "top",
-        axis.line.y = element_blank(),
-        legend.title = element_text(margin = margin(l = 0, r = 20)),
-        legend.box.just = "left",
-        panel.grid.major.y = element_blank(), 
-        panel.grid.major.x = element_line())
-```
-
-Can we get an idea of the order of actions based on their average position in the data?
-
-```{r}
-#| label:  action-order-summary
-#| eval: false
-(action_order_summary = actions_coded %>% 
-  group_by(billType, action_type) %>% 
-  summarise(across(action_number, list(min = min, 
-                                       y25 = ~quantile(., .25), 
-                                       mean = mean, median = median, 
-                                       y75 = ~quantile(., .75),
-                                       max = max), na.rm=T)))
-```
-
-```{r}
-#| label:  action-order-boxplot
-#| eval: false
-action_order_summary %>%
-  pivot_longer(
-    cols = starts_with("action_n"), 
-    names_to = "measure", values_to = "value",
-    names_transform = list(
-      measure = ~str_remove_all(., "^action_number_")
-      )
-    )
-
-action_order_summary %>% 
-  ggplot(., aes(x = action_type))+
-  geom_boxplot(
-    aes(ymin = action_number_min, 
-        lower = action_number_y25, 
-        middle = action_number_median, 
-        upper = action_number_y75,
-        ymax = action_number_max),
-    stat = "identity"
-  )+
-  facet_wrap(~billType)+
+count(actions_unnested, origin_chamber, bill_id) %>% 
+  ggplot(., aes(x = n, fill = origin_chamber))+
+  geom_histogram(binwidth = 1, colour = my_col_pal[1], alpha = .7)+
+  scale_x_continuous(expand = expansion(add = c(1, 0)),
+                     breaks = scales::breaks_pretty())+
+  scale_y_continuous(expand = expansion(), 
+                     labels = scales::comma)+
+  scale_fill_manual(name = NULL, values = viz_colours[1:2])+
+  labs(x = "Actions per bill", y = "# Bills", 
+       title = "Distribution of congressional bill activity")+
   theme_moke(plots_pane = T)+
-  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
+  theme(axis.line.y = element_blank(),
+        legend.position = c(.925, .97))
 ```
 
-```{r }
-#| label:  action-order-boxplot2
-#| eval: false
-actions_unnested %>% 
-  group_by(action_type) %>% 
-  mutate(mean_num = mean(action_number)) %>% 
-  ungroup() %>% 
-  arrange(mean_num) %>% 
-  mutate(action_type = fct_inorder(factor(action_type))) %>% 
-  ggplot(., aes(x = action_type, y = action_number))+
-  geom_boxplot()+
-  labs(title = "In what order do actions typically occur?", x = NULL)+
-  facet_wrap(~billType)+
-  theme_moke(plots_pane = T)
+What type of actions occur most often?
 
-```
-
-```{r }
-#| label:  sample-actions-plot
-actions_unnested %>% 
-  filter(bill_id == sample(bill_id, 1)) -> sample_bill_actions
-
-sample_bill_actions %>% 
-  # Plot
-  ggplot(., aes(x = actionDate))+
-  # Line connecting points
-  geom_line(aes(y = ..count.., group = bill_id), stat = "count", size = .8, alpha = .8)+
-  # Points using the count of each action type on a given date
-  geom_point(aes(colour = action_type, size = ..count..), stat = "count")+
-  labs(title = "Bill actions over time", 
-       x = "Action Date", y = "# of actions")+
-  scale_size(guide = "none", range = c(2,7))+
-  theme_moke(plots_pane = T)
+```{r}
+# Count rows for each bill
+add_count(actions_unnested, action_type, name = "actions") %>% 
+  # Count bills by the number of actions
+  count(action_type, actions, wt = n_distinct(bill_id), name = "bills" )
 ```
 
 # Cleaning Action Codes
@@ -305,38 +114,83 @@ The actions data is messy. There are a number of cases where actions are duplica
 
 ```{r }
 #| label:  action-codes
-(actions_joined = actions_coded %>% 
-  left_join(action_codes, by = c("actionCode" = "Code"))) %>% 
-  select(bill_id, action_ts, action_type, actionCode, Action) %>% 
-  count(actionCode, Action) %>% 
-  arrange(actionCode, Action)
+(actions_joined = actions_unnested %>% 
+    # Join actions to the list of action codes
+  left_join(action_codes, by = c("action_code" = "Code")))
 ```
 
 How many of the actions are actually coded?
 
-```{r }
+```{r}
 #| label:  action-code-hist
+#| fig-height: 6
 actions_joined %>% 
-  group_by(bill_id) %>%
+  group_by(origin_chamber, bill_id) %>%
   summarise(
     actions = n(),
     actions_w_code = sum(!is.na(Action)),
-    actions_coded = actions_w_code/actions
+    actions_coded = actions_w_code/actions,
+    .groups = "drop"
   ) %>% 
-  ggplot(., aes(x = actions_coded))+
-  geom_histogram(fill = my_col_pal[5], colour = my_col_pal[1])+
-  scale_x_continuous(labels = scales::percent)+
-  scale_y_continuous(labels = scales::comma, expand = expansion())+
-  labs(title = "Presence of action codes in House bills",
-       subtitle = "Proportion of coded actions in house congressional data",
+  # mutate(actions_coded = scales::percent(actions_coded)) %>%
+  # count(origin_chamber, actions_coded, wt = n_distinct(bill_id))
+  ggplot(., aes(x = actions_coded, fill = origin_chamber))+
+  geom_histogram(colour = my_col_pal[1], alpha = .9,
+                 position = position_identity())+
+  scale_x_continuous(labels = scales::percent, 
+                     breaks = scales::breaks_pretty(n = 6))+
+  scale_y_continuous(labels = scales::comma, expand = expansion(mult = c(0, .1)))+
+  scale_fill_manual(name = NULL, values = viz_colours[1:2])+
+  labs(title = "How often are action codes available?",
+       subtitle = "Proportion of bills' actions with codes",
+       # caption = source_caption("govinfo/US GPO"),
        y = "# of bills", x = "% of actions coded")+
-  theme_moke(plots_pane = T)
+  theme_moke(plots_pane = T)+
+  theme(legend.position = c(.1, .9))
 ```
 
-Below are a list of the cases I have found:
+Are action codes tied to the action source systems?
 
--   Action code `E30000` and `36000` with action type `President` and `BecameLaw` respectively appear to both represent the president signing a bill into law, while action codes `E40000` and `36000` with the same respective action types represent a bill becoming a public law. In this case, action type `President` and `BecameLaw` are interchangeable
--   Action code `Intro-H` appears to be a duplicate of action code `1000`, both of which are `IntroReferral` action types
+```{r}
+actions_joined %>% 
+  group_by(action_source_name) %>%
+  summarise(
+    actions = n(),
+    actions_w_code = sum(!is.na(Action)),
+    actions_coded = actions_w_code/actions,
+    .groups = "drop"
+  )
+```
+
+They're only coming from the Library of Congress. What proportion of the data are coming from which source?
+
+```{r}
+actions_joined %>% 
+  add_tally() %>% 
+  group_by(action_source_name) %>% 
+  summarise(
+    actions = n(),
+    actions_pct = scales::percent(n()/unique(n), accuracy = .1),
+    bills = n_distinct(bill_id),
+    # bills_pct = bills/sum(bills)
+  )
+```
+
+Library of Congress accounts for a little under half while House floor actions accounts for a little less than a third of all actions. What action types are contained in each source system?
+
+```{r}
+actions_joined %>% 
+  add_count(action_source_name, name = "source_actions") %>%
+  group_by(action_source_name, action_type) %>% 
+  summarise(
+    actions = n(),
+    actions_pct = scales::percent(n()/unique(source_actions), accuracy = .1),
+    bills = n_distinct(bill_id),
+    # bills_pct = bills/sum(bills)
+  )
+```
+
+The majority of actions from the **House floor actions** source are Intro/Referrals?
 
 Which action types have action codes?
 
@@ -346,54 +200,86 @@ actions_joined %>%
   group_by(action_type) %>% 
   summarise(
     n = n(),
-    n_coded = sum(!is.na(actionCode)),
-    pct_coded = n_coded/n
+    n_coded = sum(!is.na(action_code)),
+    pct_coded = scales::percent(n_coded/n, accuracy = .01)
   )
 ```
 
+Below are a list of the cases I have found:
+
+-   Action code `E30000` and `36000` with action type `President` and `BecameLaw` respectively appear to both represent the president signing a bill into law, while action codes `E40000` and `36000` with the same respective action types represent a bill becoming a public law. In this case, action type `President` and `BecameLaw` are interchangeable
+-   Action code `Intro-H` appears to be a duplicate of action code `1000`, both of which are `IntroReferral` action types
+
 ## Intro/Referral
+
+What source system are intro action codes coming from?
 
 ```{r }
 #| label: intro-action-codes
-actions_joined %>% 
-  filter(action_type == "IntroReferral") %>% 
-  count(action_source_name, actionCode, sort = T)
+(intro_actions = actions_joined %>% 
+  filter(action_type == "IntroReferral")) %>% 
+  count(action_source_name, action_code, sort = T)
 ```
+
+What are the different intro actions?
+
+```{r}
+intro_actions %>% 
+  count(action_text, sort = T)
+```
+
+Can we categorize these actions?
+
+-   Introduced
+
+-   Referred to committee
+
+-   Read twice and referred to committee
 
 ```{r }
 #| label: intro-actions
+intro_specific_text = c("\\s\\(.+\\)$", "(?<=not later than\\s).+") %>% 
+  str_c(collapse = "|")
+
 actions_joined %>% 
   filter(action_type == "IntroReferral") %>% 
-  count(actionCode, Action, action_text) %>% 
-  arrange(actionCode, desc(n))# %>% 
+  mutate(action_text_general = str_remove_all(action_text, intro_specific_text)) %>% 
+  count(action_code, Action, action_text_general) %>% 
+  arrange(action_code, desc(n))# %>% 
   # View("Intro/Referral Action Codes")
 ```
 
 Below is a table of the action codes and their meaning
 
++-------------+----------------------------------------------------------+----------------+
 | Action Code | Action                                                   | Given/Inferred |
-|-------------|----------------------------------------------------------|----------------|
++=============+==========================================================+================+
 | `1000`      | Introduced in House                                      | Given          |
++-------------+----------------------------------------------------------+----------------+
 | `B00100`    | Sponsor introductory remarks on measure                  | Inferred       |
++-------------+----------------------------------------------------------+----------------+
 | `H11100`    | Referred to Committee                                    | Inferred       |
++-------------+----------------------------------------------------------+----------------+
 | `H11210`    | Committee granted an extension for further consideration | Inferred       |
++-------------+----------------------------------------------------------+----------------+
 | `Intro-H`   | Introduced in House                                      | Inferred       |
++-------------+----------------------------------------------------------+----------------+
 
 : Intro/Referral Action Codes
 
-Is there a difference between the `actionCode` **1000** and **Intro-H**?
+Is there a difference between the `action_code` **1000** and **Intro-H**?
 
 ```{r }
 #| label: compare-intro
 actions_to_compare = c("1000", "Intro-H")
 
 actions_joined %>% 
-  filter(actionCode %in% actions_to_compare) %>% 
+  filter(action_code %in% actions_to_compare) %>% 
   add_count(bill_id) %>% 
   filter(n>1) %>% 
-  select(bill_id, billType, actionCode, action_source_name, action_ts, 
+  select(bill_id, bill_type, action_code, action_source_name, action_ts, 
          Action, action_type, action_text) %>% 
-  arrange(bill_id, actionCode)
+  arrange(bill_id, action_code)
 ```
 
 Do these two actions occur for every bill?
@@ -401,9 +287,9 @@ Do these two actions occur for every bill?
 ```{r }
 #| label: intro-code-comparison
 actions_joined %>% 
-  filter(actionCode %in% actions_to_compare) %>% 
-  count(bill_id, actionCode) %>% 
-  pivot_wider(id_cols = bill_id, names_from = actionCode, values_from = n, values_fill = 0) %>% 
+  filter(action_code %in% actions_to_compare) %>% 
+  count(bill_id, action_code) %>% 
+  pivot_wider(id_cols = bill_id, names_from = action_code, values_from = n, values_fill = 0) %>% 
   count(`1000`, `Intro-H`, name = "bills")
 ```
 
@@ -414,11 +300,11 @@ So we can remove `Intro-H` actions without losing any information. This reduces 
 ```{r}
 #| label: intro-code-dedupe
 actions_joined %>% 
-  select(bill_id, title, introducedDate, 
-         action_ts, action_type, actionCode, action_text,
+  select(bill_id, title, introduced_date, 
+         action_ts, action_type, action_code, action_text,
          starts_with("action_source"), starts_with("action_committee")) %>% 
   # Remove Intro-H action codes (keep NAs)
-  filter(replace_na(actionCode != "Intro-H", T)) %>% 
+  filter(replace_na(action_code != "Intro-H", T)) %>% 
   arrange(bill_id, action_ts) %>% 
   head()
 ```
@@ -429,29 +315,37 @@ actions_joined %>%
 #| label: committee-action-codes
 actions_joined %>% 
   filter(action_type == "Committee") %>% 
-  count(action_source_name, actionCode, sort = T)
+  count(action_source_name, action_code, sort = T)
 ```
 
 ```{r }
 #| label: committee-actions
 actions_joined %>% 
   filter(action_type == "Committee") %>% 
-  count(actionCode, Action, action_text) %>% 
-  arrange(actionCode, desc(n)) %>% 
+  count(action_code, Action, action_text) %>% 
+  arrange(action_code, desc(n)) %>% 
   head()# %>% 
   # View("Committee Action Codes")
 
 ```
 
-| Action Code | Action                                    | Given/Inferred |
-|-------------|-------------------------------------------|----------------|
-| `14000`     | Reported to Senate                        | Given          |
-| `14500`     | Senate committee discharged               | Given          |
-| `5000`      | Reported to House                         | Given          |
-| `5500`      | House committee discharged                | Given          |
-| `H12100`    | House committee reported original measure | Inferred       |
-| `H12200`    | Reported or amended by committee          | Inferred       |
-| `H12210`    | Supplemental report filed                 | Inferred       |
++---------------+-------------------------------------------+----------------+
+| Action Code   | Action                                    | Given/Inferred |
++===============+===========================================+================+
+| `14000`       | Reported to Senate                        | Given          |
++---------------+-------------------------------------------+----------------+
+| `14500`       | Senate committee discharged               | Given          |
++---------------+-------------------------------------------+----------------+
+| `5000`        | Reported to House                         | Given          |
++---------------+-------------------------------------------+----------------+
+| `5500`        | House committee discharged                | Given          |
++---------------+-------------------------------------------+----------------+
+| `H12100`      | House committee reported original measure | Inferred       |
++---------------+-------------------------------------------+----------------+
+| `H12200`      | Reported or amended by committee          | Inferred       |
++---------------+-------------------------------------------+----------------+
+| `H12210`      | Supplemental report filed                 | Inferred       |
++---------------+-------------------------------------------+----------------+
 
 : Committee Action Codes
 
@@ -481,20 +375,20 @@ Committee actions which do not have an action code include the following types o
 #| label: floor-action-codes
 actions_joined %>% 
   filter(action_type == "Floor") %>% 
-  count(action_source_name, actionCode, sort = T)
+  count(action_source_name, action_code, sort = T)
 ```
 
 ```{r }
 #| label: floor-actions
 actions_joined %>% 
   filter(action_type == "Floor") %>% 
-  add_count(actionCode, name = "actionCode_count") %>% 
+  add_count(action_code, name = "action_code_count") %>% 
   # Select distinct action codes and their descriptions
-  distinct(actionCode, actionCode_count,
+  distinct(action_code, action_code_count,
            Action, action_text_trunc = str_trunc(action_text, width = 60),
            action_text) %>%
   # sort by frequency
-  arrange(desc(actionCode_count), actionCode) %>% 
+  arrange(desc(action_code_count), action_code) %>% 
   head()# %>% 
   # View("Floor Action Codes")
 ```
@@ -616,7 +510,7 @@ actions_joined %>%
 ```{r }
 #| label: floor-missing-codes
 actions_joined %>% 
-  filter(action_type == "Floor", is.na(actionCode)) %>% 
+  filter(action_type == "Floor", is.na(action_code)) %>% 
   count(action_text, sort = T)# %>% 
   # View("Floor Actions missing codes")
 ```
@@ -659,20 +553,20 @@ Floor actions which do not have an action code appear to be Senate actions, but 
 #| label: discharge-action-codes
 actions_joined %>% 
   filter(action_type == "Discharge") %>% 
-  count(action_source_name, actionCode, sort = T)
+  count(action_source_name, action_code, sort = T)
 ```
 
 ```{r }
 #| label: discharge-actions
 actions_joined %>% 
   filter(action_type == "Discharge") %>% 
-  add_count(actionCode, name = "actionCode_count") %>% 
+  add_count(action_code, name = "action_code_count") %>% 
   # Select distinct action codes and their descriptions
-  distinct(actionCode, actionCode_count,
+  distinct(action_code, action_code_count,
            Action, action_text_trunc = str_trunc(action_text, width = 60),
            action_text) %>%
   # sort by frequency
-  arrange(desc(actionCode_count), actionCode) %>% 
+  arrange(desc(action_code_count), action_code) %>% 
   head()# %>% 
   # View("Discharge Action Codes")
 
@@ -692,20 +586,20 @@ actions_joined %>%
 #| label: president-action-codes
 actions_joined %>% 
   filter(action_type == "President") %>% 
-  count(action_source_name, actionCode, sort = T)
+  count(action_source_name, action_code, sort = T)
 ```
 
 ```{r }
 #| label: president-actions
 actions_joined %>% 
   filter(action_type == "President") %>% 
-  add_count(actionCode, name = "actionCode_count") %>% 
+  add_count(action_code, name = "action_code_count") %>% 
   # Select distinct action codes and their descriptions
-  distinct(actionCode, actionCode_count,
+  distinct(action_code, action_code_count,
            Action, action_text_trunc = str_trunc(action_text, width = 60),
            action_text) %>%
   # sort by frequency
-  arrange(desc(actionCode_count), actionCode) %>% 
+  arrange(desc(action_code_count), action_code) %>% 
   head()# %>% 
   # View("President Action Codes")
 ```
@@ -724,7 +618,7 @@ actions_joined %>%
 #| label:  becamelaw-action-codes
 actions_joined %>% 
   filter(action_type == "BecameLaw") %>% 
-  count(action_source_name, actionCode, sort = T)
+  count(action_source_name, action_code, sort = T)
 
 ```
 
@@ -732,13 +626,13 @@ actions_joined %>%
 #| label: becamelaw-actions
 actions_joined %>% 
   filter(action_type == "BecameLaw") %>% 
-  add_count(actionCode, name = "actionCode_count") %>% 
+  add_count(action_code, name = "action_code_count") %>% 
   # Select distinct action codes and their descriptions
-  distinct(actionCode, actionCode_count,
+  distinct(action_code, action_code_count,
            Action, action_text_trunc = str_trunc(action_text, width = 60),
            action_text) %>%
   # sort by frequency
-  arrange(desc(actionCode_count), actionCode) %>% 
+  arrange(desc(action_code_count), action_code) %>% 
   head()# %>% 
   # View("Became Law Action Codes")
 ```
@@ -755,8 +649,8 @@ actions_joined %>%
 #| label:  missing-actions
 actions_joined %>% 
   filter(action_type == "(Missing Action Type)") %>% 
-  count(action_source_name, actionCode) %>% 
-  arrange(actionCode, desc(n))
+  count(action_source_name, action_code) %>% 
+  arrange(action_code, desc(n))
 
 ```
 
@@ -764,34 +658,272 @@ actions_joined %>%
 #| label:  missing-action-codes
 actions_joined %>% 
   filter(action_type == "(Missing Action Type)") %>% 
-  add_count(actionCode, name = "actionCode_count") %>% 
+  add_count(action_code, name = "action_code_count") %>% 
   # Select distinct action codes and their descriptions
-  distinct(action_source_name, actionCode, actionCode_count,
+  distinct(action_source_name, action_code, action_code_count,
            Action, action_text_trunc = str_trunc(action_text, width = 60),
            action_text) %>%
   # sort by frequency
-  arrange(desc(actionCode_count), actionCode) %>% 
+  arrange(desc(action_code_count), action_code) %>% 
   head()# %>% 
   # View("Missing Type Action Codes")
 ```
 
++-------------+-----------------------------------------------------------------------------------+----------------+
 | Action Code | Action                                                                            | Given/Inferred |
-|-------------|-----------------------------------------------------------------------------------|----------------|
++=============+===================================================================================+================+
 | `H12410`    | Placed on the Union Calendar                                                      | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
 | `H12420`    | Placed on the House Calendar                                                      | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
 | `H41931`    | Result of motion to reconsider                                                    | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
 | `19500`     | Resolving differences                                                             | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
 | `H41610`    | Result of motion that the House agree to Senate amendment                         | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
 | `H82000`    | Move to table motion to reconsider/postpone consideration/refer                   | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
 | `H12440`    | Motion to place bill on consensus calendar                                        | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
 | `H41400`    | Previous question ordered pursuant to rule/previous House order                   | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
 | `H12430`    | Placed on the Private Calendar                                                    | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
 | `H40110`    | Request unanimous consent that the House to agree to Senate amendment(s)          | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
 | `H40140`    | Move to suspend rules and agree to Senate amendment(s)                            | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
 | `H40150`    | Move that the House agree to Senate amendment(s)                                  | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
 | `80000`     | Amendment failed by the House                                                     | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
 | `H30230`    | An objection was heard to the unanimous consent request to consider the measure.  | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
 | `H40130`    | House moved to agree to the Senate amendment, pursuant to previous special order. | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
 | `H41930`    | Move to reconsider the vote                                                       | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
 
 : Missing Action Type Action Codes
+
+# Order of (legislative) operations
+
+What is the chronological order of legislative actions? Based on this [map of legislative status steps](https://www.loc.gov/pictures/resource/ppmsca.33996/), it is not entirely straightforward. `action_date` and `action_time` are two fields which should provide some insight here. Unfortunately, `action_time` is missing in 90% of cases.
+
+```{r}
+# Calculate how many actions are missing date and time data
+actions_unnested %>% 
+  summarise(
+    n_actions = n(),
+    across(c(action_date, action_time), 
+           list(data_points = ~scales::comma(sum(!is.na(.), na.rm = T)), 
+                pct = ~scales::percent(sum(!is.na(.), na.rm = T)/n_actions, accuracy = .01)))
+  ) %>% 
+  # Pivot summary for table
+  pivot_longer(cols = starts_with("action"), 
+               names_to = c("field", ".value"), names_sep = "(?<=e)_")
+```
+
+Because time information is missing and often actions of different types occur on the same day, we need to make use `action_type` to identify the order of actions.
+
+## Assumption
+
+Congressional actions follow the following order:\
+Intro/Referral -\> Committee -\> Discharge -\> Floor -\> President -\> Become Law
+
+Because actions can occur on the same date and we do not know the time, this assumption is useful to infer the order of actions.
+
+```{r}
+actions_order = c("IntroReferral", "Committee", 
+                  "Discharge", "Floor", "President", "BecameLaw")
+```
+
+Let's see an example of a case where different action types have the same date with no time information:
+
+```{r}
+#| label: actions-example
+#| column: page
+unclear_action_example = actions_unnested %>% 
+  filter(bill_id == "HR-1002") %>% 
+  arrange(action_date, action_time)
+
+unclear_action_example %>% 
+  select(action_date, action_time, action_type, action_text) %>% 
+  reactable(theme = moke_rt(),
+            columns = list(
+              "action_text" = colDef(width = 264)
+            )) %>% 
+  add_title(unique(unclear_action_example$title)) %>% 
+  add_subtitle("Example of ambiguous congressional action order")
+```
+
+```{r}
+
+(actions_coded = actions_unnested %>% 
+    # Create action timestamp
+    mutate(action_ts = make_datetime(year = year(action_date), 
+                                     month = month(action_date), 
+                                     day = day(action_date), 
+                                     hour = coalesce(hour(action_time), 0), 
+                                     min = coalesce(minute(action_time), 0), 
+                                     sec = coalesce(second(action_time), 0), 
+                                     tz = "US/Eastern"),
+           # Set action type order
+           action_type_fct = fct_explicit_na(
+             factor(action_type, 
+                    levels = actions_order, 
+                    ordered = T),
+             na_level = "(Missing Action Type)"
+           ),
+           action_source_name = factor(action_source_name,
+                                       levels = c("Library of Congress", 
+                                                  "House floor actions", 
+                                                  "House committee actions",
+                                                  "Senate"),
+                                       ordered = T)) %>% 
+    arrange(bill_id, action_ts) %>% 
+    select(-action_date, action_time) %>% 
+    relocate(action_ts, action_type, action_text, 
+                    action_code, action_type_fct,
+                    action_source_name, action_source_code,
+                    starts_with("action_committee"), .after = title)) %>% 
+  select(title, bill_id, starts_with("action"))
+```
+
+What action types are most common?
+
+```{r}
+#| label: count-action-type
+actions_coded %>%
+  count(bill_type, action_type) %>% 
+  arrange(bill_type, desc(n)) %>% 
+  pivot_wider(names_from = action_type, values_from = n, values_fill = 0)
+```
+
+Or in a graph:
+
+```{r}
+#| label: action-type-prop
+#| fig.width: 10
+#| fig.height: 6
+actions_coded %>%
+  count(bill_type, action_type) %>% 
+  arrange(bill_type, n) %>% 
+  # Calculate % of bill's actions
+  group_by(bill_type) %>% 
+  mutate(pct = n/sum(n),
+         pct_lab = if_else(pct > .08, scales::percent(pct, accuracy = .1), NA_character_)) %>% 
+  ungroup() %>%
+  # Plot
+  ggplot(., aes(y = bill_type, fill = fct_rev(action_type)))+
+  geom_col(aes(x = n), 
+           colour = my_col_pal[1], width = .6, 
+           position = position_fill())+
+  geom_text(aes(x = n, label = pct_lab), 
+           position = position_fill(vjust = .5),
+           family = "Heebo Light", fontface = "bold",
+           colour = my_col_pal[1],
+           size = 5)+
+  scale_x_continuous(name = NULL, 
+                     labels = scales::percent, 
+                     breaks = scales::breaks_pretty(),
+                     expand = expansion(add = .01))+
+  scale_fill_manual(name = "Action\nType", 
+                    values = viz_colours[length(unique(actions_unnested$action_type)):1],
+                    guide = guide_legend(title.position = "left", 
+                                         title.hjust = .5,
+                                         label.position = "top", 
+                                         keywidth = unit(2.5, "cm"),
+                                         #direction = "horizontal", 
+                                         nrow = 1, reverse = T))+
+  labs(title = "Most common congressional actions taken on bills",
+       subtitle = "Actions as proportion of total bill activity, by bill type",
+       y = NULL)+
+  # facet_wrap(~bill_type, scales = "free_y")+
+  theme_moke(plot_margin = margin(20,20,20,20))+
+  # theme_minimal()+
+  theme(legend.position = "top",
+        axis.line.y = element_blank(),
+        legend.title = element_text(margin = margin(l = 0, r = 20)),
+        legend.box.just = "left",
+        panel.grid.major.y = element_blank(), 
+        panel.grid.major.x = element_line())
+```
+
+Can we get an idea of the order of actions based on their average position in the data?
+
+```{r}
+#| label:  action-order-summary
+#| eval: false
+(action_order_summary = actions_coded %>% 
+  group_by(bill_type, action_type) %>% 
+  summarise(across(action_number, list(min = min, 
+                                       y25 = ~quantile(., .25), 
+                                       mean = mean, median = median, 
+                                       y75 = ~quantile(., .75),
+                                       max = max), na.rm=T)))
+```
+
+```{r}
+#| label:  action-order-boxplot
+#| eval: false
+action_order_summary %>%
+  pivot_longer(
+    cols = starts_with("action_n"), 
+    names_to = "measure", values_to = "value",
+    names_transform = list(
+      measure = ~str_remove_all(., "^action_number_")
+      )
+    )
+
+action_order_summary %>% 
+  ggplot(., aes(x = action_type))+
+  geom_boxplot(
+    aes(ymin = action_number_min, 
+        lower = action_number_y25, 
+        middle = action_number_median, 
+        upper = action_number_y75,
+        ymax = action_number_max),
+    stat = "identity"
+  )+
+  facet_wrap(~bill_type)+
+  theme_moke(plots_pane = T)+
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
+```
+
+```{r }
+#| label:  action-order-boxplot2
+#| eval: false
+actions_unnested %>% 
+  group_by(action_type) %>% 
+  mutate(mean_num = mean(action_number)) %>% 
+  ungroup() %>% 
+  arrange(mean_num) %>% 
+  mutate(action_type = fct_inorder(factor(action_type))) %>% 
+  ggplot(., aes(x = action_type, y = action_number))+
+  geom_boxplot()+
+  labs(title = "In what order do actions typically occur?", x = NULL)+
+  facet_wrap(~bill_type)+
+  theme_moke(plots_pane = T)
+
+```
+
+```{r }
+#| label:  sample-actions-plot
+actions_unnested %>% 
+  filter(bill_id == sample(bill_id, 1)) -> sample_bill_actions
+
+sample_bill_actions %>% 
+  # Plot
+  ggplot(., aes(x = action_date))+
+  # Line connecting points
+  geom_line(aes(y = ..count.., group = bill_id), stat = "count", size = .8, alpha = .8)+
+  # Points using the count of each action type on a given date
+  geom_point(aes(colour = action_type, size = ..count..), stat = "count")+
+  labs(title = "Bill actions over time", 
+       x = "Action Date", y = "# of actions")+
+  scale_size(guide = "none", range = c(2,7))+
+  theme_moke(plots_pane = T)
+```
+
