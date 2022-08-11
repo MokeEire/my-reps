@@ -249,6 +249,8 @@ actions_joined %>%
   # View("Intro/Referral Action Codes")
 ```
 
+### Action Codes
+
 Below is a table of the action codes and their meaning
 
 +-------------+----------------------------------------------------------+----------------+
@@ -265,67 +267,147 @@ Below is a table of the action codes and their meaning
 | `Intro-H`   | Introduced in House                                      | Inferred       |
 +-------------+----------------------------------------------------------+----------------+
 
-: Intro/Referral Action Codes
-
-Is there a difference between the `action_code` **1000** and **Intro-H**?
+The `action_code`s **1000** and **Intro-H** seem to be duplicates. Let's look at them.
 
 ```{r }
 #| label: compare-intro
 actions_to_compare = c("1000", "Intro-H")
 
-actions_joined %>% 
-  filter(action_code %in% actions_to_compare) %>% 
-  add_count(bill_id) %>% 
-  filter(n>1) %>% 
-  select(bill_id, bill_type, action_code, action_source_name, action_ts, 
-         Action, action_type, action_text) %>% 
-  arrange(bill_id, action_code)
+# Filter to 1000 and Intro-H action codes
+(compare_intro_actions = actions_joined %>% 
+  filter(action_code %in% actions_to_compare)) %>% 
+  glimpse(width = 80)
 ```
 
-Do these two actions occur for every bill?
+How many bills have both actions? And how many bills does each action occur on?
 
-```{r }
-#| label: intro-code-comparison
-actions_joined %>% 
-  filter(action_code %in% actions_to_compare) %>% 
-  count(bill_id, action_code) %>% 
-  pivot_wider(id_cols = bill_id, names_from = action_code, values_from = n, values_fill = 0) %>% 
-  count(`1000`, `Intro-H`, name = "bills")
+```{r}
+compare_intro_actions %>% 
+  # Count actions on each bill
+  add_count(bill_id, name = "actions") %>% 
+  # Count bills with X actions
+  count(actions, wt = n_distinct(bill_id), name = "bills")
+
+# Count bills with action code Y
+compare_intro_actions %>% 
+  count(action_code, wt = n_distinct(bill_id), name = "bills")
 ```
 
-No, `1000` occurs for every bill, but `Intro-H` does not.
+When bills have more than one action, is all the information identical other than the action code?
 
-So we can remove `Intro-H` actions without losing any information. This reduces the size of the actions data by \~8,000 rows.
+```{r}
+compare_intro_actions %>% 
+  # Count actions on each bill
+  add_count(bill_id, name = "actions") %>% 
+  # Keep bills with multiple actions
+  filter(actions > 1) %>% 
+  arrange(bill_id, action_code) %>% #glimpse(width = 80)
+  # Remove columns which are different
+  select(-action_code, -Action) %>% 
+  distinct_all()
+```
+
+Yep
+
+If bills only have one action, which do they have?
+
+```{r}
+compare_intro_actions %>% 
+  # Count actions on each bill
+  add_count(bill_id, name = "actions") %>% 
+  # Keep bills with one action
+  filter(actions==1) %>% 
+  count(action_code)
+```
+
+Do all bills with IntroH action codes also have code 1000?
+
+```{r}
+introh_bills = compare_intro_actions %>% 
+  filter(action_code == "Intro-H") %>% 
+  distinct(bill_id) 
+
+# Return intro-H bills which DO NOT have a match
+anti_join(introh_bills,
+          compare_intro_actions, by = "bill_id")
+
+```
+
+Yep, so we can remove `Intro-H` actions without losing any information. This reduces the size of the actions data by \~8,000 rows.
 
 ```{r}
 #| label: intro-code-dedupe
-actions_joined %>% 
-  select(bill_id, title, introduced_date, 
-         action_ts, action_type, action_code, action_text,
-         starts_with("action_source"), starts_with("action_committee")) %>% 
+
+(actions_intro_dedupe = actions_joined %>% 
   # Remove Intro-H action codes (keep NAs)
   filter(replace_na(action_code != "Intro-H", T)) %>% 
-  arrange(bill_id, action_ts) %>% 
-  head()
+  arrange(bill_id, action_date, action_time)) %>% 
+  glimpse(width = 80)
 ```
 
 ## Committee
 
-```{r }
-#| label: committee-action-codes
-actions_joined %>% 
-  filter(action_type == "Committee") %>% 
-  count(action_source_name, action_code, sort = T)
+What actions do we have for committees?
+
+```{r}
+(committee_actions = actions_joined %>% 
+  filter(action_type == "Committee")) %>% 
+  count(action_code, Action)
+```
+
+The majority of committee actions don't have action codes. We also have 3 action codes which aren't in the codes provided by govinfo.
+
+Can we tell what they are?
+
+```{r}
+committee_actions %>% 
+  filter(!is.na(action_code), is.na(Action)) %>% 
+  select(action_code, bill_id, action_date, action_text, everything()) %>% 
+  arrange(action_code, bill_id)
+```
+
+H12200 and H12100 look similar but might not be identical. Do bills have both?
+
+```{r}
+committee_actions %>% 
+  filter(action_code %in% c("H12200", "H12100")) %>% 
+  add_count(bill_id) %>% 
+  count(n)
+```
+
+Nope, so they're likely distinct actions. What about H12210?
+
+```{r}
+committee_actions %>% 
+  filter(action_code == "H12210") %>% 
+  select(action_code, bill_id, action_date, action_text, everything()) %>% 
+  arrange(action_code, bill_id)
 ```
 
 ```{r }
+#| label: committee-action-codes
+ %>% 
+  count(action_source_name, sort = T)
+```
+
+What committee actions do we have coded? And which source is providing the codes?
+
+```{r }
 #| label: committee-actions
-actions_joined %>% 
-  filter(action_type == "Committee") %>% 
-  count(action_code, Action, action_text) %>% 
-  arrange(action_code, desc(n)) %>% 
-  head()# %>% 
+committee_actions %>% 
+  count(action_code, Action, sort = T)# %>% 
   # View("Committee Action Codes")
+
+committee_actions %>% 
+  add_count(action_source_name, name = "source_actions") %>%
+  group_by(Action, action_source_name) %>% 
+  summarise(
+    actions = n(),
+    actions_pct = scales::percent(n()/unique(source_actions), accuracy = .1),
+    bills = n_distinct(bill_id),
+    # bills_pct = bills/sum(bills)
+  )
+  count(action_source_name, action_code, sort = T)
 
 ```
 
