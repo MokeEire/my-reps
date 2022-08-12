@@ -378,12 +378,6 @@ committee_actions %>%
   arrange(action_code, bill_id)
 ```
 
-```{r }
-#| label: committee-action-codes
- %>% 
-  count(action_source_name, sort = T)
-```
-
 What committee actions do we have coded? And which source is providing the codes?
 
 ```{r }
@@ -401,7 +395,7 @@ committee_actions %>%
     bills = n_distinct(bill_id),
     # bills_pct = bills/sum(bills)
   )
-  count(action_source_name, action_code, sort = T)
+  
 
 ```
 
@@ -416,6 +410,71 @@ committee_actions %>%
 | `H12210`    | Supplemental report filed                 | Inferred       |
 
 : Committee Action Codes
+
+What about the actions which don't have a code? Let's see how many we can categorize with some regex:
+
+```{r}
+committee_actions %>% 
+  filter(is.na(action_code)) %>% 
+  count(action_text) %>% View("committee action texts")
+
+(committee_actions_categorised = committee_actions %>% 
+  filter(is.na(action_code)) %>% 
+  mutate(committee_action_cat = case_when(
+    str_detect(action_text, 
+               "Referred to the Subcommittee") ~ "Referred to Subcommittee",
+    # str_detect(action_text, 
+    #            "Ordered to be reported without amendment favorably") ~ "Ordered to be reported without amendment favorably.",
+    str_detect(action_text, 
+               "Ordered to be reported with an amendment in the nature of a substitute favorably") ~ "Ordered to be reported with an amendment in the nature of a substitute favorably",
+    str_detect(action_text, 
+               "Ordered to be reported with (an )?amendments? favorably") ~ "Ordered to be reported with an amendment favorably",
+    str_detect(action_text,
+               "[Rr]eported(\\sby Senator [A-z\\s]+)? with (an )?amendments?") ~ "Reported with amendment(s)",
+    str_detect(action_text,
+               "[Rr]eported(\\sby Senator [A-z\\s]+)? without amendment") ~ "Reported without amendment",
+    str_detect(action_text, 
+               "Original measure reported to Senate") ~ "Original measure reported to Senate",
+    str_detect(action_text, 
+               "Hearings held\\.") ~ "Hearings held",
+    str_detect(action_text, 
+               "Committee consideration held") ~ "Committee consideration held",
+    str_detect(action_text,
+               "Failed to report favorably") ~ "Failed to report favorably",
+    str_detect(action_text,
+               "Executive Comment Received") ~ "Executive Comment Received",
+    str_detect(action_text,
+               "Executive Comment Requested") ~ "Executive Comment Requested",
+    str_detect(action_text,
+               "Forwarded by Subcommittee to Full Committee") ~ "Forwarded to Full Committee",
+    str_detect(action_text,
+               "Ordered to be Reported \\(Amended\\)") ~ "Ordered to be Reported (Amended)",
+    str_detect(action_text,
+               "Ordered to be Reported") ~ "Ordered to be Reported",
+    str_detect(action_text,
+               "Subcommittee (.+) Discharged\\.$") ~ "Subcommittee Discharged",
+    T ~ action_text
+    # str_detect(action_text, "Ordered to be reported without amendment favorably") ~ "Ordered to be reported without amendment favorably.",
+    
+  ))) %>% 
+  count(committee_action_cat, sort = T)
+```
+
+Do committees
+
+```{r}
+
+```
+
+Check the action texts in each category
+
+```{r}
+committee_actions_categorised %>% 
+  count(committee_action_cat, action_text) %>% View("committee action categories")
+  arrange(committee_action_cat, action_text) %>% 
+  select(committee_action_cat, action_text, everything())
+  
+```
 
 Committee actions which do not have an action code include the following types of actions:
 
@@ -436,6 +495,8 @@ Committee actions which do not have an action code include the following types o
 -   Forwarded by Subcommittee to Full Committee by Voice Vote
 
 -   Executive Comment Requested/Received
+
+Which come from which source?
 
 ## Floor
 
