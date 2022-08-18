@@ -61,7 +61,7 @@ How many bills do we have in the data?
 n_distinct(actions_unnested$bill_id)
 ```
 
-How many actions per bill?
+How many actions are taken on bills?
 
 ```{r}
 # Count rows for each bill
@@ -73,26 +73,31 @@ add_count(actions_unnested, bill_id, name = "actions") %>%
 ```{r}
 count(actions_unnested, origin_chamber, bill_id) %>% 
   ggplot(., aes(x = n, fill = origin_chamber))+
-  geom_histogram(binwidth = 1, colour = my_col_pal[1], alpha = .7)+
-  scale_x_continuous(expand = expansion(add = c(1, 0)),
+  geom_histogram(binwidth = 1, colour = my_col_pal[1], alpha = .7,
+                 position = position_identity())+
+  scale_x_continuous(expand = expansion(add = c(2, 0)),
                      breaks = scales::breaks_pretty())+
-  scale_y_continuous(expand = expansion(), 
+  scale_y_continuous(expand = expansion(add = c(0,400)), 
                      labels = scales::comma)+
   scale_fill_manual(name = NULL, values = viz_colours[1:2])+
   labs(x = "Actions per bill", y = "# Bills", 
        title = "Distribution of congressional bill activity")+
   theme_moke(plots_pane = T)+
   theme(axis.line.y = element_blank(),
-        legend.position = c(.925, .97))
+        legend.position = c(.9, .9))
 ```
 
-What type of actions occur most often?
+Which action types occur most often?
 
 ```{r}
 # Count rows for each bill
 add_count(actions_unnested, action_type, name = "actions") %>% 
+  add_tally(wt = n_distinct(bill_id), name = "total_bills") %>% 
   # Count bills by the number of actions
-  count(action_type, actions, wt = n_distinct(bill_id), name = "bills" )
+  count(action_type, actions, total_bills, 
+        wt = n_distinct(bill_id), name = "bills") %>% 
+  mutate(pct_of_bills = scales::percent(bills/total_bills)) %>% 
+  select(-total_bills)
 ```
 
 # Cleaning Action Codes
@@ -122,10 +127,10 @@ actions_joined %>%
   # mutate(actions_coded = scales::percent(actions_coded)) %>%
   # count(origin_chamber, actions_coded, wt = n_distinct(bill_id))
   ggplot(., aes(x = actions_coded, fill = origin_chamber))+
-  geom_histogram(colour = my_col_pal[1], alpha = .9,
+  geom_histogram(colour = my_col_pal[1], alpha = .8,
                  position = position_identity())+
   scale_x_continuous(labels = scales::percent, 
-                     breaks = scales::breaks_pretty(n = 6))+
+                     breaks = scales::breaks_pretty(n = 6), limits = c(0,1))+
   scale_y_continuous(labels = scales::comma, expand = expansion(mult = c(0, .1)))+
   scale_fill_manual(name = NULL, values = viz_colours[1:2])+
   labs(title = "How often are action codes available?",
@@ -133,23 +138,24 @@ actions_joined %>%
        # caption = source_caption("govinfo/US GPO"),
        y = "# of bills", x = "% of actions coded")+
   theme_moke(plots_pane = T)+
-  theme(legend.position = c(.1, .9))
+  theme(legend.position = c(.9, .9))
 ```
 
 Are action codes tied to the action source systems?
 
 ```{r}
 actions_joined %>% 
+  # Count actions by action source
   group_by(action_source_name) %>%
   summarise(
     actions = n(),
     actions_w_code = sum(!is.na(Action)),
-    actions_coded = actions_w_code/actions,
+    actions_coded = scales::percent(actions_w_code/actions),
     .groups = "drop"
   )
 ```
 
-They're only coming from the Library of Congress. What proportion of the data are coming from which source?
+They're only coming from the Library of Congress. What proportion of the data does each source account for?
 
 ```{r}
 actions_joined %>% 
@@ -157,13 +163,15 @@ actions_joined %>%
   group_by(action_source_name) %>% 
   summarise(
     actions = n(),
-    actions_pct = scales::percent(n()/unique(n), accuracy = .1),
+    proportion = scales::percent(n()/unique(n), accuracy = .1),
     bills = n_distinct(bill_id),
     # bills_pct = bills/sum(bills)
   )
 ```
 
-Library of Congress accounts for a little under half while House floor actions accounts for a little less than a third of all actions. What action types are contained in each source system?
+Library of Congress accounts for a little under half of the data while the House floor actions source accounts for a little less than a third of actions data.
+
+What action types are contained in each source system?
 
 ```{r}
 actions_joined %>% 
@@ -171,15 +179,25 @@ actions_joined %>%
   group_by(action_source_name, action_type) %>% 
   summarise(
     actions = n(),
-    actions_pct = scales::percent(n()/unique(source_actions), accuracy = .1),
+    # actions_pct = scales::percent(n()/unique(source_actions), accuracy = .1),
+    actions_pct = n()/unique(source_actions),
     bills = n_distinct(bill_id),
     # bills_pct = bills/sum(bills)
-  )
+  )# %>% 
+  # pivot_wider(id_cols = action_source_name, 
+  #             names_from = action_type, 
+  #             values_from = c(actions, actions_pct, bills), 
+  #             names_glue = "{action_type}_{.value}",
+  #             values_fill = 0) %>% 
+  # select(action_source_name, 
+  #        starts_with("IntroReferral"), starts_with("Committee"), 
+  #        starts_with("Floor"), starts_with("Discharge"), 
+  #        starts_with("President"), starts_with("BecameLaw"), starts_with("NA"))
 ```
 
 The majority of actions from the **House floor actions** source are Intro/Referrals?
 
-Which action types have action codes?
+How often are action codes present for each action type?
 
 ```{r}
 #| label: action-codes-summary
