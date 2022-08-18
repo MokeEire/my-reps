@@ -22,24 +22,11 @@ library(reactablefmtr)
 plan(multisession)
 source("R/parsing_functions.R")
 
-knit_print.data.frame = function(x, ...){
-  knitr::knit_print(
-    reactable::reactable(x,
-                     theme = moke_rt(),
-                     compact = F, 
-                     # fullWidth = T,
-                     pagination = F,
-                     height = if(nrow(x) >= 10) "400px" else "auto",
-                     resizable = T),
-    ...
-    )
-}
-
 action_codes = read_csv(here("data", "action_codes.csv"), col_types = "cc")
 
 # Load cleaned R objects
 all_bills = readRDS(here("data", "cleaned", "BILLSTATUS_117.Rds"))
-actions = readRDS(here("data", "cleaned", "BILLSTATUS_117_Actions.Rds"))
+# actions = readRDS(here("data", "cleaned", "BILLSTATUS_117_Actions.Rds"))
 ```
 
 First, let's `unnest()` actions from the bills data and see what action-level information looks like.
