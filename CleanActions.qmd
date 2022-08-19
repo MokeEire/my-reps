@@ -82,17 +82,18 @@ count(actions_unnested, origin_chamber, bill_id) %>%
                  position = position_identity())+
   scale_x_continuous(expand = expansion(add = c(2, 0)),
                      breaks = scales::breaks_pretty())+
-  scale_y_continuous(expand = expansion(add = c(0,400)), 
+  scale_y_continuous(expand = expansion(add = c(0,200)), 
                      labels = scales::comma)+
   scale_fill_manual(name = NULL, values = viz_colours[1:2])+
-  labs(x = "Actions per bill", y = "# Bills", 
-       title = "Distribution of congressional bill activity")+
+  labs(x = "Actions", y = "Bills", 
+       title = "How much does congress interact with legislation?",
+       subtitle = "Distribution of actions on bills in the House and Senate")+
   theme_moke(plots_pane = T)+
   theme(axis.line.y = element_blank(),
-        legend.position = c(.9, .9))
+        legend.position = c(.9, .7))
 ```
 
-Which action types occur most often?
+Actions can fall into a few different categories like Intro/Referral, Committee, and Floor actions. How many actions of each type are in the data, and on how many bills do each type of action occur?
 
 ```{r}
 # Count rows for each bill
@@ -101,25 +102,86 @@ add_count(actions_unnested, action_type, name = "actions") %>%
   # Count bills by the number of actions
   count(action_type, actions, total_bills, 
         wt = n_distinct(bill_id), name = "bills") %>% 
-  mutate(pct_of_bills = scales::percent(bills/total_bills)) %>% 
+  mutate(bill_prop = scales::percent(bills/total_bills)) %>% 
   select(-total_bills)
 ```
 
-# Cleaning Action Codes
+# Action Codes
 
-The actions data is messy. There are a number of cases where actions are duplicated in the data which need to reconcile in order to make sense of the legislative timeline. Are we able to identify duplicate actions using action codes?
+You might have noticed there is an `action_code` field in the data which sounds tremendously useful. govinfo provides a table of action codes in the [Bill Status User Guide](https://github.com/usgpo/bill-status/blob/main/BILLSTATUS-XML_User_User-Guide.md#3-action-code-element-possible-values), but unfortunately, as the Government Publishing Office describes, there are a number of issues:
 
-```{r }
+> *Various code sets are used by multiple systems in the House, Senate, and Library of Congress by legislative clerks and data editors for functions independent of this bulk data set. As new codes and systems were developed, there was no coordinated effort to retroactively apply new codes to old records. Many codes are concatenated with other codes or elements or utilize free text. Codes in one set may be redundant with a different code in another code set. Additionally, some codes may have been used and re-used over the years for different purposes further complicating the ability to create an authoritative list.*
+
+But action codes will be vital for understanding how congress members interact with legislation, so I'll need to develop my own set of categories to break down the different kinds of committee and floor actions. To start, I join in these codes using a simple two column csv file to see where we have action code information.
+
+```{r}
 #| label:  action-codes
 (actions_joined = actions_unnested %>% 
     # Join actions to the list of action codes
-  left_join(action_codes, by = c("action_code" = "Code")))
+  left_join(action_codes, by = c("action_code" = "Code"))) %>% 
+  glimpse(width = 80)
 ```
 
-How many of the actions are actually coded?
+```{r}
+#| label: action-code-freq-bar
+
+actions_joined %>% 
+  # Make missing action types explicit
+  mutate(action_type = fct_explicit_na(action_type)) %>% 
+  # Count coded actions by chamber and action type
+  group_by(origin_chamber, action_type) %>% 
+  summarise(
+    actions = n(),
+    actions_w_code = sum(!is.na(action_code)),
+    actions_w_code_no_desc = sum(!is.na(Action)),
+    actions_coded = actions_w_code/actions,
+    actions_coded_no_desc = actions_w_code_no_desc/actions,
+    .groups = "drop"
+  ) %>% 
+  # Plot
+  ggplot(., aes(y = fct_rev(action_type), group = origin_chamber))+
+  # All actions
+  geom_col(aes(x = actions),
+           position = position_dodge(width = 1),
+           colour = my_col_pal[3], alpha = .85)+
+  # Coded actions
+  geom_col(aes(x = actions*actions_coded, fill = origin_chamber),
+           colour = my_col_pal[3],
+           position = position_dodge(width = 1),
+           alpha = .95)+
+  # Coded actions
+  ggpattern::geom_col_pattern(aes(x = actions*actions_coded_no_desc,
+                                  pattern_fill = origin_chamber),
+           # pattern_colour = my_col_pal[4],
+           pattern_density = .5,
+           position = position_dodge(width = 1),
+           alpha = .95)+
+  # Axes
+  scale_x_continuous(labels = scales::comma, 
+                     breaks = scales::breaks_pretty(),
+                     expand = expansion(mult = c(0, .1)))+
+  scale_fill_manual(name = NULL, values = viz_colours[1:2])+
+  ggpattern::scale_pattern_fill_manual(name = NULL, values = viz_colours[1:2])+
+  labs(title = "How often are action codes available?",
+       subtitle = "Striped area indicates there is a code but no description",
+       # caption = source_caption("govinfo/US GPO"),
+       y = NULL, x = "Actions")+
+  facet_wrap(~origin_chamber, scales = "free_x")+
+  theme_moke(plots_pane = T)+
+  theme(legend.position = "none",
+        panel.grid.major.y = element_blank(),
+        panel.grid.major.x = element_line())
+
+scales::show_col(my_col_pal)
+```
+
+So there's a bit of work to do to develop comprehensive coding for each type of action (except perhaps `BecameLaw`). To do this, I will look at each action type and do two things:
+
+-   Separate out actions which are either missing the action code or have an action code but do not have a description
 
 ```{r}
 #| label:  action-code-hist
+#| eval: false
 #| fig-height: 6
 actions_joined %>% 
   group_by(origin_chamber, bill_id) %>%
@@ -145,6 +207,12 @@ actions_joined %>%
   theme_moke(plots_pane = T)+
   theme(legend.position = c(.9, .9))
 ```
+
+The actions data is messy.
+
+There are a number of cases where actions are duplicated in the data which need to reconcile in order to make sense of the legislative timeline. Are we able to identify duplicate actions using action codes?
+
+How many of the actions are actually coded?
 
 Are action codes tied to the action source systems?
 
@@ -479,23 +547,23 @@ committee_actions %>%
 
 ```
 
-+--------------+-------------------------------------------+----------------+
-| Action Code  | Action                                    | Given/Inferred |
-+==============+===========================================+================+
-| `14000`      | Reported to Senate                        | Given          |
-+--------------+-------------------------------------------+----------------+
-| `14500`      | Senate committee discharged               | Given          |
-+--------------+-------------------------------------------+----------------+
-| `5000`       | Reported to House                         | Given          |
-+--------------+-------------------------------------------+----------------+
-| `5500`       | House committee discharged                | Given          |
-+--------------+-------------------------------------------+----------------+
-| `H12100`     | House committee reported original measure | Inferred       |
-+--------------+-------------------------------------------+----------------+
-| `H12200`     | Reported or amended by committee          | Inferred       |
-+--------------+-------------------------------------------+----------------+
-| `H12210`     | Supplemental report filed                 | Inferred       |
-+--------------+-------------------------------------------+----------------+
++---------------+-------------------------------------------+----------------+
+| Action Code   | Action                                    | Given/Inferred |
++===============+===========================================+================+
+| `14000`       | Reported to Senate                        | Given          |
++---------------+-------------------------------------------+----------------+
+| `14500`       | Senate committee discharged               | Given          |
++---------------+-------------------------------------------+----------------+
+| `5000`        | Reported to House                         | Given          |
++---------------+-------------------------------------------+----------------+
+| `5500`        | House committee discharged                | Given          |
++---------------+-------------------------------------------+----------------+
+| `H12100`      | House committee reported original measure | Inferred       |
++---------------+-------------------------------------------+----------------+
+| `H12200`      | Reported or amended by committee          | Inferred       |
++---------------+-------------------------------------------+----------------+
+| `H12210`      | Supplemental report filed                 | Inferred       |
++---------------+-------------------------------------------+----------------+
 
 : Committee Action Codes
 
