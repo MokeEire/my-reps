@@ -29,16 +29,27 @@ all_bills = readRDS(here("data", "cleaned", "BILLSTATUS_117.Rds"))
 # actions = readRDS(here("data", "cleaned", "BILLSTATUS_117_Actions.Rds"))
 ```
 
+Using the `clean_data.R` script, I have parsed govinfo's house and senate bill data from the 117th congress. In this document, I will be looking at the actions on these bills and cleaning them up. This includes:
+
+-   Deduplicating actions
+
+-   Categorizing and coding actions which are missing codes and/or descriptions
+
+-   
+
 First, let's `unnest()` actions from the bills data and see what action-level information looks like.
 
 ```{r}
 #| column: screen-inset
 
+# Select non-list columns and then select action-related columns
+# (this includes the actions list column)
 (actions_unnested = select(all_bills, 
                            where(negate(is_list)), 
                            starts_with("action")) %>% 
    # Unnest actions
   unnest(actions)) %>% 
+  # After assignment: Subset the data
   head(20) %>% 
   select(bill_id, title, introduced_date, 
          action_date, action_time, 
@@ -47,21 +58,15 @@ First, let's `unnest()` actions from the bills data and see what action-level in
          action_source_name, action_committee_name)
 ```
 
-# Understanding the data
+# Overview
+
+What does the data look like? `glimpse()` gives us the dimensions of the data, the data types and the first few elements of each column.
 
 ```{r}
 glimpse(actions_unnested, width = 80)
 ```
 
-## Overview
-
-How many bills do we have in the data?
-
-```{r}
-n_distinct(actions_unnested$bill_id)
-```
-
-How many actions are taken on bills?
+The data consists of `r scales::comma(nrow(actions_unnested))` actions from `r scales::comma(n_distinct(actions_unnested$bill_id))` bills. What's the distribution of actions per bill?
 
 ```{r}
 # Count rows for each bill
