@@ -472,97 +472,7 @@ count_attr_colnames = function(xml_file, attribute = "actions"){
   }
 }
 
-#' Remove duplicate actions
-#'
-#' @param actions_df 
-#'
-#' @return
-#' @export
-#'
-#' @examples
-remove_duplicate_actions = function(actions_df){
-  actions_df %>% 
-    # Remove Intro-H action codes (keep NAs), replace_na keeps missing actionCodes
-    filter(replace_na(action_code != "Intro-H", T))
-}
 
-#' Number actions
-#' 
-#' Create action number to represent chronological order. Currently this is determined by sorting in the following order:
-#' 
-#' - Timestamp
-#' - Action Type (in the order IntroReferral, Committee, Floor, Discharge, President, BecameLaw)
-#' - Action Source (in the order Library of Congress, House floor actions, House committee actions, Senate)
-#'
-#' @param actions_df 
-#'
-#' @return
-#' @export
-#'
-#' @examples
-number_actions = function(actions_df){
-  actions_ordered = actions_df %>% 
-    # Order bills and actions
-    arrange(action_ts, action_type, action_source_name) %>% 
-    # Number actions
-    mutate(action_number = row_number()) %>% 
-    ungroup()
-  
-  # message(select(actions_ordered, action_number, action_ts, action_type, action_text))
-  return(actions_ordered)
-}
-
-
-
-#' Code actions
-#' 
-#' Code action type and action source as factors, combine action date and action time
-#'
-#' @param actions_df 
-#' 
-#' 
-#'
-#' @return
-#' @export
-#'
-#' @examples
-code_actions = function(actions_df, 
-                        action_codes,
-                        action_order = c("IntroReferral", "Committee", "Floor", 
-                                         "Discharge", "President", "BecameLaw")){
-  # TODO: 
-  cols <- c(action_time = NA_POSIXct_)
-  
-  # Ensure actionTime is present
-  actions_new_cols = add_column(actions_df, !!!cols[setdiff(names(cols), names(actions_df))]) %>% 
-    # Create action timestamp
-    mutate(action_ts = make_datetime(year = year(action_date), 
-                                     month = month(action_date), 
-                                     day = day(action_date), 
-                                     hour = coalesce(hour(action_time), 0), 
-                                     min = coalesce(minute(action_time), 0), 
-                                     sec = coalesce(second(action_time), 0), 
-                                     tz = "US/Eastern"),
-           action_type_fct = fct_explicit_na(
-             factor(action_type, 
-                    levels = action_order, 
-                    ordered = T),
-             na_level = "(Missing Action Type)"
-           ),
-           action_source_name = factor(action_source_name,
-                                       levels = c("Library of Congress", "House floor actions", 
-                                                  "House committee actions", "Senate"),
-                                       ordered = T))
-  
-  # Join in action codes
-  left_join(actions_new_cols, 
-            action_codes, by = c("action_code" = "Code")) %>% 
-    number_actions() %>% 
-    # Create boolean for whether bill became law
-    mutate(became_law = ("BecameLaw" %in% action_type), .after = action_time) %>% 
-    ungroup() %>% 
-    select(-action_type_fct, -action_time)
-}
 
 extract_bill_status = function(xml_file, 
                                nested_attributes = c("committees", "votes", "actions", "sponsors", "cosponsors"),
@@ -797,4 +707,99 @@ extract_bill_status = function(xml_file,
 trunc_columns = function(df){
   df %>% 
     mutate(across(where(is_character), str_trunc, width = 32))
+}
+
+
+# Cleaning functions ------------------------------------------------------
+
+#' Remove duplicate actions
+#'
+#' @param actions_df 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+remove_duplicate_actions = function(actions_df){
+  actions_df %>% 
+    # Remove Intro-H action codes (keep NAs), replace_na keeps missing actionCodes
+    filter(replace_na(action_code != "Intro-H", T))
+}
+
+#' Number actions
+#' 
+#' Create action number to represent chronological order. Currently this is determined by sorting in the following order:
+#' 
+#' - Timestamp
+#' - Action Type (in the order IntroReferral, Committee, Floor, Discharge, President, BecameLaw)
+#' - Action Source (in the order Library of Congress, House floor actions, House committee actions, Senate)
+#'
+#' @param actions_df 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+number_actions = function(actions_df){
+  actions_ordered = actions_df %>% 
+    # Order bills and actions
+    arrange(action_ts, action_type, action_source_name) %>% 
+    # Number actions
+    mutate(action_number = row_number()) %>% 
+    ungroup()
+  
+  # message(select(actions_ordered, action_number, action_ts, action_type, action_text))
+  return(actions_ordered)
+}
+
+
+
+#' Code actions
+#' 
+#' Code action type and action source as factors, combine action date and action time
+#'
+#' @param actions_df 
+#' 
+#' 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+code_actions = function(actions_df, 
+                        action_codes,
+                        action_order = c("IntroReferral", "Committee", "Floor", 
+                                         "Discharge", "President", "BecameLaw")){
+  # TODO: 
+  cols <- c(action_time = NA_POSIXct_)
+  
+  # Ensure actionTime is present
+  actions_new_cols = add_column(actions_df, !!!cols[setdiff(names(cols), names(actions_df))]) %>% 
+    # Create action timestamp
+    mutate(action_ts = make_datetime(year = year(action_date), 
+                                     month = month(action_date), 
+                                     day = day(action_date), 
+                                     hour = coalesce(hour(action_time), 0), 
+                                     min = coalesce(minute(action_time), 0), 
+                                     sec = coalesce(second(action_time), 0), 
+                                     tz = "US/Eastern"),
+           action_type_fct = fct_explicit_na(
+             factor(action_type, 
+                    levels = action_order, 
+                    ordered = T),
+             na_level = "(Missing Action Type)"
+           ),
+           action_source_name = factor(action_source_name,
+                                       levels = c("Library of Congress", "House floor actions", 
+                                                  "House committee actions", "Senate"),
+                                       ordered = T))
+  
+  # Join in action codes
+  left_join(actions_new_cols, 
+            action_codes, by = c("action_code" = "Code")) %>% 
+    number_actions() %>% 
+    # Create boolean for whether bill became law
+    mutate(became_law = ("BecameLaw" %in% action_type), .after = action_time) %>% 
+    ungroup() %>% 
+    select(-action_type_fct, -action_time)
 }
