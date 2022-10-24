@@ -1,0 +1,198 @@
+---
+title: "Can we model successful legislation?"
+author: "Mark Barrett"
+date: "`r Sys.Date()`"
+format: 
+  html:
+    theme: lumen
+    toc: true
+    code-fold: true
+    code-tools: true
+editor: visual
+---
+
+```{r}
+#| label: setup
+#| include: false
+library(extrafont)
+library(tictoc)
+library(furrr)
+library(here)
+library(reactable)
+library(reactablefmtr)
+plan(multisession)
+source("R/parsing_functions.R")
+
+action_codes = read_csv(here("data", "action_codes.csv"), col_types = "cc")
+
+# Load cleaned R objects
+all_bills = readRDS(here("data", "cleaned", "BILLSTATUS_117.Rds"))
+```
+
+```{r}
+glimpse(all_bills, width = 80)
+```
+
+To determine whether a bill became law, search `actions` for *BecameLaw* as an action type.
+
+```{r}
+(bills_became_law = all_bills %>% 
+  mutate(became_law = map_lgl(actions, ~ "BecameLaw" %in% .$action_type)) %>% 
+  filter(became_law))
+```
+
+If a law must pass both the House and the Senate, do we have both copies of each passed bill? Spoiler: No because we have 89...
+
+```{r}
+bills_became_law %>% 
+  count(origin_chamber)
+```
+
+I know there was a data collection issue in my past dataset, so this may be the issue here. But if we have house and senate copies of any bills they will line up in title (surely?)
+
+```{r}
+bills_became_law %>% 
+  arrange(title)
+```
+
+Okay so maybe we don't have copies of each bill and the origin chamber is a functional field! So how many actions are there on each of these bills that became law?
+
+```{r}
+bills_became_law %>% 
+  mutate(n_actions = map_dbl(actions, nrow)) %>% 
+  arrange(desc(n_actions))
+```
+
+```{r}
+#| eval: false
+# Is it faster to use mutate or add_count?
+microbenchmark::microbenchmark(
+  add_count = bills_became_law %>% 
+  add_count(bill_id, wt = map_dbl(actions, nrow), name = "n_actions"),
+  mutate = bills_became_law %>% 
+  mutate(n_actions = map_dbl(actions, nrow))
+)
+```
+
+Let's look at two of these bills:
+
+-   HR-3684
+
+-   S-937
+
+```{r}
+hr3684 = filter(bills_became_law, bill_id == "HR-3684")
+s937 = filter(bills_became_law, bill_id == "S-937")
+```
+
+# HR-3684
+
+```{r}
+glimpse(hr3684)
+```
+
+Who sponsored the bill?
+
+```{r}
+hr3684 %>% 
+  select(bill_id, sponsors) %>% 
+  unnest(sponsors)
+```
+
+Who cosponsored the bill?
+
+```{r}
+hr3684 %>% 
+  select(bill_id, cosponsors) %>% 
+  unnest(cosponsors)
+```
+
+## Actions
+
+What actions occurred on the bill?
+
+```{r}
+(hr3684_actions = hr3684 %>% 
+  select(bill_id, actions) %>% 
+  unnest(actions)) %>% 
+  glimpse(width=80)
+```
+
+Can we arrange these actions in the order they occurred?
+
+```{r}
+actions_order = c("IntroReferral", "Committee", "Floor", 
+                  "Discharge", "President", "BecameLaw")
+
+(hr3684_actions_ts = hr3684_actions %>% 
+    # Create action timestamp
+    mutate(action_ts = make_datetime(year = year(action_date), 
+                                     month = month(action_date), 
+                                     day = day(action_date), 
+                                     hour = coalesce(hour(action_time), 0), 
+                                     min = coalesce(minute(action_time), 0), 
+                                     sec = coalesce(second(action_time), 0), 
+                                     tz = "US/Eastern"),
+           # Set action type order
+           action_type_fct = fct_explicit_na(
+             factor(action_type, 
+                    levels = actions_order, 
+                    ordered = T),
+             na_level = "(Missing Action Type)"
+           ),
+           action_source_name = factor(action_source_name,
+                                       levels = c("Library of Congress", 
+                                                  "House floor actions", 
+                                                  "House committee actions",
+                                                  "Senate"),
+                                       ordered = T)) %>% 
+  arrange(action_ts)) %>% View()
+```
+
+What does a timeline look like?
+
+```{r}
+hr3684_actions_ts %>% 
+  count(action_source_name, action_ts, action_date, action_type) %>% 
+  ggplot(., aes(x = action_ts, y = action_source_name))+
+  geom_point(shape = 21, aes(size = n, fill = action_type), 
+             alpha = .8, colour = my_col_pal[2], show.legend = F)+
+  scale_x_datetime(labels = scales::label_date_short())+
+  labs(x = NULL, y = NULL,
+       title = "How H.R. 3684 became law",
+       subtitle = "Legislative action timeline for H.R. 3684, by action source")+
+  theme_moke(plots_pane = T)
+```
+
+The order of operations for HR 3684
+
+1.  Introduced in House
+2.  Referred to Committee on Transportation and Infrastructure
+
++------------+---------------------------------------------------------------------+
+| Date       | Event                                                               |
++============+=====================================================================+
+| 2021-06-04 | Introduced in House                                                 |
++------------+---------------------------------------------------------------------+
+| 2021-06-04 | Referred to Committee on Transportation and Infrastructure          |
++------------+---------------------------------------------------------------------+
+| 2021-06-07 | Referred to Subcommittees                                           |
+|            |                                                                     |
+|            | -   Railroads, Pipelines, and Hazardous Materials                   |
+|            |                                                                     |
+|            | -   Highways and Transit                                            |
++------------+---------------------------------------------------------------------+
+| 2021-06-09 | Subcommittees discharged                                            |
++------------+---------------------------------------------------------------------+
+| 2021-06-10 | Committee Consideration and Mark-Up                                 |
+|            |                                                                     |
+|            | Ordered (Voted) to be Reported                                      |
++------------+---------------------------------------------------------------------+
+| 2021-06-22 | Placed on Union Calendar                                            |
+|            |                                                                     |
+|            | Reported w/amendment by Transportation and Infrastructure Committee |
++------------+---------------------------------------------------------------------+
+|            |                                                                     |
++------------+---------------------------------------------------------------------+
+
+: Timeline
