@@ -1,6 +1,9 @@
 ---
 title: "Cleaning Legislative Actions Data"
 date: "`r Sys.Date()`"
+execute: 
+  warning: false
+  message: false
 format: 
   html:
     theme: litera
@@ -102,7 +105,7 @@ add_count(actions_unnested, action_type, name = "actions") %>%
 
 # Cleaning Action Codes
 
-The actions data is messy. There are a number of cases where actions are duplicated in the data which need to reconcile in order to make sense of the legislative timeline. Are we able to identify duplicate actions using action codes?
+The actions data is messy. There are a number of cases of duplicate actions to reconcile in order to make sense of the legislative timeline. Are we able to identify duplicate actions using action codes?
 
 ```{r }
 #| label:  action-codes
@@ -114,26 +117,39 @@ The actions data is messy. There are a number of cases where actions are duplica
 How many of the actions are actually coded?
 
 ```{r}
+actions_joined %>% 
+  group_by(origin_chamber) %>%
+  # Count actions, actions w/code, and coded proportion
+  summarise(
+    actions = n(),
+    actions_w_code = sum(!is.na(Action)),
+    coded_prop = actions_w_code/actions,
+    .groups = "drop"
+  )
+```
+
+```{r}
 #| label:  action-code-hist
 #| fig-height: 6
 actions_joined %>% 
   group_by(origin_chamber, bill_id) %>%
+  # Count actions, actions w/code, and coded proportion
   summarise(
     actions = n(),
     actions_w_code = sum(!is.na(Action)),
-    actions_coded = actions_w_code/actions,
+    coded_prop = actions_w_code/actions,
     .groups = "drop"
   ) %>% 
-  # mutate(actions_coded = scales::percent(actions_coded)) %>%
-  # count(origin_chamber, actions_coded, wt = n_distinct(bill_id))
-  ggplot(., aes(x = actions_coded, fill = origin_chamber))+
+  # mutate(coded_prop = scales::percent(coded_prop)) %>%
+  # count(origin_chamber, coded_prop, wt = n_distinct(bill_id))
+  ggplot(., aes(x = coded_prop, fill = origin_chamber))+
   geom_histogram(colour = my_col_pal[1], alpha = .8,
                  position = position_identity())+
   scale_x_continuous(labels = scales::percent, 
                      breaks = scales::breaks_pretty(n = 6), limits = c(0,1))+
   scale_y_continuous(labels = scales::comma, expand = expansion(mult = c(0, .1)))+
   scale_fill_manual(name = NULL, values = viz_colours[1:2])+
-  labs(title = "How often are action codes available?",
+  labs(title = "What proportion of a bill's actions are coded?",
        subtitle = "Proportion of bills' actions with codes",
        # caption = source_caption("govinfo/US GPO"),
        y = "# of bills", x = "% of actions coded")+
@@ -780,6 +796,8 @@ Floor actions which do not have an action code appear to be Senate actions, but 
 -   Motion to appeal the ruling of the chair
 
 -   Motion to reconsider cloture vote
+
+`E20000` is the same as the `28000` action code under the President action type
 
 ## Discharge
 
