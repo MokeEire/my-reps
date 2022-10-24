@@ -256,53 +256,111 @@ parse_subcommittee = function(subcommittee){
 #' @export
 #'
 #' @examples
-parse_vote_roll = function(vote, logger, bill_type, bill_num){
+parse_vote_roll = function(vote, chamber, logger, bill_type, bill_num){
+  
+  clean_url = str_replace(vote, "Votes", "evs")
+  
+  tryCatch({
+    vote_xml = read_xml(clean_url)
+  },
+  error=function(cond) {
+    log_info(logger, 
+             bill_type = bill_type,
+             bill_num = bill_num, 
+             "ERROR: Vote roll could not be parsed\n",
+             vote)
+    # Choose a return value in case of error
+    # tibble()
+  })
+  
+  if(!exists("vote_xml")){
+    return(tibble())
+  }
+  # chamber = str_sub(bill_type, start = 0, end = 1)
+  if(chamber == "House"){
+    
+    # Vote data
+    legislators_list = as_list(xml_find_all(vote_xml, "vote-data/recorded-vote"))
+    legislator_vote_df = legislators_list %>% 
+      # Modify one level deeper using map_at to target legislator elements
+      map(map_at, "legislator", attributes) %>% 
+      map_dfr(flatten_dfc) %>% 
+      janitor::clean_names()
+    
+    # Vote metadata
+    vote_singular_nodes = xml_find_all(vote_xml, "vote-metadata/*[count(./*) = 0]")
+    
+    vote_df = as_list(vote_singular_nodes) %>% 
+      # as_list() doesn't retain element names so we set names ourselves
+      setNames(xml_name(vote_singular_nodes)) %>% 
+      flatten_dfc() %>% 
+      janitor::clean_names() %>% 
+      # Remove duplicated columns
+      select(-any_of(c("congress", "chamber", "session", "legis_num")))
+    
+    # Vote totals
+    vote_totals_by_party = xml_find_all(vote_xml, "vote-metadata/vote-totals/totals-by-party")
+    party_vote_totals_df = as_list(vote_totals_by_party) %>% 
+      map_dfr(flatten_dfc) %>% 
+      janitor::clean_names() %>% 
+      type_convert(col_types = cols(
+        party = col_character(),
+        yea_total = col_double(),
+        nay_total = col_double(),
+        present_total = col_double(),
+        not_voting_total = col_double()
+      ))
+    
+    vote_df %>% 
+      mutate(legislator_votes = list(legislator_vote_df),
+             party_votes = list(party_vote_totals_df)) %>% 
+      janitor::clean_names()
+    
+  } else {
+    # Singular nodes
+    vote_singular_nodes = xml_find_all(vote_xml, "*[count(./*) = 0]")
+    
+    singular_df = as_list(vote_singular_nodes) %>% 
+      set_names(xml_name(vote_singular_nodes)) %>% 
+      flatten_dfc() %>% 
+      select(-congress, -session, -congress_year)
+    
+    # Document
+    # vote_document = xml_child(vote_xml, "document") %>% 
+    #   as_list() %>% 
+    #   flatten_dfc()
+    
+    # Amendment
+    vote_amendment = xml_child(vote_xml, "amendment") %>% 
+      as_list() %>% 
+      flatten_dfc()
+    
+    # Vote count
+    vote_count = xml_child(vote_xml, "count") %>% 
+      as_list() %>% 
+      flatten_dfc()
+    # Tie breaker
+    vote_tie_breaker = xml_child(vote_xml, "tie_breaker") %>% 
+      as_list() %>% 
+      flatten_dfc()
+    
+    # Vote Members
+    vote_members = xml_child(vote_xml, "members") %>% 
+      as_list() %>% 
+      map_dfr(flatten_dfc)
+    
+    vote_df = list(
+      singular_df, vote_amendment, vote_count, vote_tie_breaker
+    ) %>% 
+      keep(~(nrow(.) > 0)) %>% 
+      bind_cols()
+    
+    vote_df %>% 
+      mutate(legislator_votes = list(vote_members)) %>% 
+      janitor::clean_names()
+  }
 
-  tryCatch(
-    {
-      vote_xml = read_xml(vote)
-
-      # Vote data
-      legislators_list = as_list(xml_find_all(vote_xml, "vote-data/recorded-vote"))
-      legislator_vote_df = legislators_list %>% 
-        # Modify one level deeper using map_at to target legislator elements
-        map(map_at, "legislator", attributes) %>% 
-        map_dfr(flatten_dfc) %>% 
-        janitor::clean_names()
-      
-      # Vote metadata
-      vote_singular_nodes = xml_find_all(vote_xml, "vote-metadata/*[count(./*) = 0]")
-      
-      vote_df = as_list(vote_singular_nodes) %>% 
-          # as_list() doesn't retain element names so we set names ourselves
-          setNames(xml_name(vote_singular_nodes)) %>% 
-          flatten_dfc() %>% 
-        janitor::clean_names() %>% 
-        # Remove duplicated columns
-        select(-any_of(c("congress", "chamber")))
-      
-      # Vote totals
-      vote_totals_by_party = xml_find_all(vote_xml, "vote-metadata/vote-totals/totals-by-party")
-      party_vote_totals_df = as_list(vote_totals_by_party) %>% 
-        map_dfr(flatten_dfc) %>% 
-        janitor::clean_names() %>% 
-        type_convert()
-      
-      vote_df %>% 
-        mutate(legislator_votes = list(legislator_vote_df),
-               party_votes = list(party_vote_totals_df)) %>% 
-        janitor::clean_names()
-      
-    },
-    error=function(cond) {
-      log_info(logger, 
-               bill_type = bill_type,
-               bill_num = bill_num, 
-               "ERROR: Vote roll could not be parsed")
-      # Choose a return value in case of error
-      return(tibble())
-    }
-  )
+  
   
   
 }
@@ -414,97 +472,7 @@ count_attr_colnames = function(xml_file, attribute = "actions"){
   }
 }
 
-#' Remove duplicate actions
-#'
-#' @param actions_df 
-#'
-#' @return
-#' @export
-#'
-#' @examples
-remove_duplicate_actions = function(actions_df){
-  actions_df %>% 
-    # Remove Intro-H action codes (keep NAs), replace_na keeps missing actionCodes
-    filter(replace_na(action_code != "Intro-H", T))
-}
 
-#' Number actions
-#' 
-#' Create action number to represent chronological order. Currently this is determined by sorting in the following order:
-#' 
-#' - Timestamp
-#' - Action Type (in the order IntroReferral, Committee, Floor, Discharge, President, BecameLaw)
-#' - Action Source (in the order Library of Congress, House floor actions, House committee actions, Senate)
-#'
-#' @param actions_df 
-#'
-#' @return
-#' @export
-#'
-#' @examples
-number_actions = function(actions_df){
-  actions_ordered = actions_df %>% 
-    # Order bills and actions
-    arrange(action_ts, action_type, action_source_name) %>% 
-    # Number actions
-    mutate(action_number = row_number()) %>% 
-    ungroup()
-  
-  # message(select(actions_ordered, action_number, action_ts, action_type, action_text))
-  return(actions_ordered)
-}
-
-
-
-#' Code actions
-#' 
-#' Code action type and action source as factors, combine action date and action time
-#'
-#' @param actions_df 
-#' 
-#' 
-#'
-#' @return
-#' @export
-#'
-#' @examples
-code_actions = function(actions_df, 
-                        action_codes,
-                        action_order = c("IntroReferral", "Committee", "Floor", 
-                                         "Discharge", "President", "BecameLaw")){
-  # TODO: 
-  cols <- c(action_time = NA_POSIXct_)
-  
-  # Ensure actionTime is present
-  actions_new_cols = add_column(actions_df, !!!cols[setdiff(names(cols), names(actions_df))]) %>% 
-    # Create action timestamp
-    mutate(action_ts = make_datetime(year = year(action_date), 
-                                     month = month(action_date), 
-                                     day = day(action_date), 
-                                     hour = coalesce(hour(action_time), 0), 
-                                     min = coalesce(minute(action_time), 0), 
-                                     sec = coalesce(second(action_time), 0), 
-                                     tz = "US/Eastern"),
-           action_type_fct = fct_explicit_na(
-             factor(action_type, 
-                    levels = action_order, 
-                    ordered = T),
-             na_level = "(Missing Action Type)"
-           ),
-           action_source_name = factor(action_source_name,
-                                       levels = c("Library of Congress", "House floor actions", 
-                                                  "House committee actions", "Senate"),
-                                       ordered = T))
-  
-  # Join in action codes
-  left_join(actions_new_cols, 
-            action_codes, by = c("action_code" = "Code")) %>% 
-    number_actions() %>% 
-    # Create boolean for whether bill became law
-    mutate(became_law = ("BecameLaw" %in% action_type), .after = action_time) %>% 
-    ungroup() %>% 
-    select(-action_type_fct, -action_time)
-}
 
 extract_bill_status = function(xml_file, 
                                nested_attributes = c("committees", "votes", "actions", "sponsors", "cosponsors"),
@@ -545,6 +513,8 @@ extract_bill_status = function(xml_file,
   bill_text_versions = as_list(xml_find_all(bill_xml, "textVersions/item")) %>% 
     map(map_at, "formats", map_dfr, flatten_dfc) %>% 
     map_dfr(flatten_dfc)
+  #TODO: Parse bill text version format data
+  
   ## Latest action
   latest_action = as_list(xml_find_all(bill_xml, "latestAction")) %>% 
     map(flatten_dfc) %>% 
@@ -603,23 +573,27 @@ extract_bill_status = function(xml_file,
   
   if("votes" %in% nested_attributes && length(votes_node)>0 && get_votes){
     
+    
     # Coerce nodes to list
     votes_list = as_list(votes_node)
 
-    votes_df = map_dfr(votes_list, flatten_dfc)
+    votes_df = map_dfr(votes_list, flatten_dfc) %>% 
+      select(-any_of(c("congress")))
 
     # Add Vote tallies
     vote_rolls_df = votes_df %>% 
-      mutate(vote_roll = map(url, parse_vote_roll, 
+      mutate(vote_roll = map2(url, chamber, parse_vote_roll, 
                              logger = logger, 
                              bill_type = bill_df$billType,
                              bill_num = bill_df$billNumber),
              roll_found = map_lgl(vote_roll, ~(nrow(.) > 0))) %>% 
       janitor::clean_names()
     
-    bill_df$votes = list(vote_rolls_df)
+    bill_df$house_votes = list(filter(vote_rolls_df, chamber == "House"))
+    bill_df$senate_votes = list(filter(vote_rolls_df, chamber == "Senate"))
   } else {
-    bill_df$votes = list(tibble())
+    bill_df$house_votes = list(tibble())
+    bill_df$senate_votes = list(tibble())
   }
   
   # Actions ---------
@@ -733,4 +707,99 @@ extract_bill_status = function(xml_file,
 trunc_columns = function(df){
   df %>% 
     mutate(across(where(is_character), str_trunc, width = 32))
+}
+
+
+# Cleaning functions ------------------------------------------------------
+
+#' Remove duplicate actions
+#'
+#' @param actions_df 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+remove_duplicate_actions = function(actions_df){
+  actions_df %>% 
+    # Remove Intro-H action codes (keep NAs), replace_na keeps missing actionCodes
+    filter(replace_na(action_code != "Intro-H", T))
+}
+
+#' Number actions
+#' 
+#' Create action number to represent chronological order. Currently this is determined by sorting in the following order:
+#' 
+#' - Timestamp
+#' - Action Type (in the order IntroReferral, Committee, Floor, Discharge, President, BecameLaw)
+#' - Action Source (in the order Library of Congress, House floor actions, House committee actions, Senate)
+#'
+#' @param actions_df 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+number_actions = function(actions_df){
+  actions_ordered = actions_df %>% 
+    # Order bills and actions
+    arrange(action_ts, action_type, action_source_name) %>% 
+    # Number actions
+    mutate(action_number = row_number()) %>% 
+    ungroup()
+  
+  # message(select(actions_ordered, action_number, action_ts, action_type, action_text))
+  return(actions_ordered)
+}
+
+
+
+#' Code actions
+#' 
+#' Code action type and action source as factors, combine action date and action time
+#'
+#' @param actions_df 
+#' 
+#' 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+code_actions = function(actions_df, 
+                        action_codes,
+                        action_order = c("IntroReferral", "Committee", "Floor", 
+                                         "Discharge", "President", "BecameLaw")){
+  # TODO: 
+  cols <- c(action_time = NA_POSIXct_)
+  
+  # Ensure actionTime is present
+  actions_new_cols = add_column(actions_df, !!!cols[setdiff(names(cols), names(actions_df))]) %>% 
+    # Create action timestamp
+    mutate(action_ts = make_datetime(year = year(action_date), 
+                                     month = month(action_date), 
+                                     day = day(action_date), 
+                                     hour = coalesce(hour(action_time), 0), 
+                                     min = coalesce(minute(action_time), 0), 
+                                     sec = coalesce(second(action_time), 0), 
+                                     tz = "US/Eastern"),
+           action_type_fct = fct_explicit_na(
+             factor(action_type, 
+                    levels = action_order, 
+                    ordered = T),
+             na_level = "(Missing Action Type)"
+           ),
+           action_source_name = factor(action_source_name,
+                                       levels = c("Library of Congress", "House floor actions", 
+                                                  "House committee actions", "Senate"),
+                                       ordered = T))
+  
+  # Join in action codes
+  left_join(actions_new_cols, 
+            action_codes, by = c("action_code" = "Code")) %>% 
+    number_actions() %>% 
+    # Create boolean for whether bill became law
+    mutate(became_law = ("BecameLaw" %in% action_type), .after = action_time) %>% 
+    ungroup() %>% 
+    select(-action_type_fct, -action_time)
 }
