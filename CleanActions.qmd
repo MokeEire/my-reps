@@ -32,90 +32,112 @@ all_bills = readRDS(here("data", "cleaned", "BILLSTATUS_117.Rds"))
 # actions = readRDS(here("data", "cleaned", "BILLSTATUS_117_Actions.Rds"))
 ```
 
-Using the `clean_data.R` script, I have parsed govinfo's house and senate bill data from the 117th congress. In this document, I will be looking at the actions on these bills and cleaning them up. This includes:
+Using the `clean_data.R` script, I parsed govinfo's house and senate bill data from the current (117th) congress. This document looks at the actions on these bills and outlines the steps required to clean the actions data. This includes:
+
+-   Making sure fields are the right data type
 
 -   Deduplicating actions
 
 -   Categorizing and coding actions which are missing codes and/or descriptions
 
--   
-
 First, let's `unnest()` actions from the bills data and see what action-level information looks like.
 
 ```{r}
-#| column: screen-inset
-
 # Select non-list columns and then select action-related columns
 # (this includes the actions list column)
 (actions_unnested = select(all_bills, 
-                           where(negate(is_list)), 
-                           starts_with("action")) %>% 
+                           bill_id, title, bill_type, actions) %>% 
    # Unnest actions
   unnest(actions)) %>% 
   # After assignment: Subset the data
   head(20) %>% 
-  select(bill_id, title, introduced_date, 
+  select(bill_id, title,  
          action_date, action_time, 
          action_type, action_code,
          action_text,
          action_source_name, action_committee_name)
+
 ```
 
-# Overview
-
-What does the data look like? `glimpse()` gives us the dimensions of the data, the data types and the first few elements of each column.
+We can also use `glimpse()` to give us the dimensions of the data, the data types and the first few elements of each column.
 
 ```{r}
+#| label: glimpse-actions
 glimpse(actions_unnested, width = 80)
 ```
 
-The data consists of `r scales::comma(nrow(actions_unnested))` actions from `r scales::comma(n_distinct(actions_unnested$bill_id))` bills. What's the distribution of actions per bill?
+The data consists of `r scales::comma(nrow(actions_unnested))` actions from `r scales::comma(n_distinct(actions_unnested$bill_id))` bills.
 
 ```{r}
-# Count rows for each bill
-add_count(actions_unnested, bill_id, name = "actions") %>% 
-  # Count bills by the number of actions
-  count(actions, wt = n_distinct(bill_id))
-```
-
-```{r}
-count(actions_unnested, origin_chamber, bill_id) %>% 
-  ggplot(., aes(x = n, fill = origin_chamber))+
-  geom_histogram(binwidth = 1, colour = my_col_pal[1], alpha = .7,
+# Count actions by chamber and bill
+count(actions_unnested, bill_id) %>% 
+  # Plot action count by origin chamber
+  ggplot(., aes(x = n))+
+  # Histogram
+  geom_histogram(binwidth = 1, 
+                 fill = viz_colours[1],
+                 colour = my_col_pal[1], 
+                 alpha = .7,
                  position = position_identity())+
+  # Axes
   scale_x_continuous(expand = expansion(add = c(2, 0)),
                      breaks = scales::breaks_pretty())+
   scale_y_continuous(expand = expansion(add = c(0,200)), 
                      labels = scales::comma)+
   scale_fill_manual(name = NULL, values = viz_colours[1:2])+
+  # Labels
   labs(x = "Actions", y = "Bills", 
-       title = "How much does congress interact with legislation?",
-       subtitle = "Distribution of actions on bills in the House and Senate")+
+       title = "How many actions occur on each bill?",
+       subtitle = "Distribution of actions on bills")+
   theme_moke(plots_pane = T)+
   theme(axis.line.y = element_blank(),
         legend.position = c(.9, .7))
 ```
 
-Actions can fall into a few different categories like Intro/Referral, Committee, and Floor actions. How many actions of each type are in the data, and on how many bills do each type of action occur?
-
 ```{r}
 # Count rows for each bill
+count(actions_unnested, bill_id, name = "actions") %>% 
+  summary()
+```
+
+There are a few different columns we can use to categorise actions:
+
+-   `action_type`
+
+-   `action_code`
+
+-   `action_source_name`
+
+As described by Congress' website, the legislative process most generally maps to `action_type`. `action_code` is useful for distinguishing between actions of the same type, but as we'll see it is not perfect. `action_source_name` seems to indicate the source of the particular action data and is useful mostly for understanding how the data is constructed.
+
+```{r}
+#| layout-nrow: 1
+count(actions_unnested, action_type)
+
+count(actions_unnested, action_code)
+
+count(actions_unnested, action_source_name)
+```
+
+On how many bills do each type of action occur?
+
+```{r}
+# add action count for each bill
 add_count(actions_unnested, action_type, name = "actions") %>% 
+  # tally total bills
   add_tally(wt = n_distinct(bill_id), name = "total_bills") %>% 
-  # Count bills by the number of actions
+  # Count bills by action count
   count(action_type, actions, total_bills, 
         wt = n_distinct(bill_id), name = "bills") %>% 
   mutate(bill_prop = scales::percent(bills/total_bills)) %>% 
   select(-total_bills)
 ```
 
-# Action Codes
-
-You might have noticed there is an `action_code` field in the data which sounds tremendously useful. govinfo provides a table of action codes in the [Bill Status User Guide](https://github.com/usgpo/bill-status/blob/main/BILLSTATUS-XML_User_User-Guide.md#3-action-code-element-possible-values), but unfortunately, as the Government Publishing Office describes, there are a number of issues:
+govinfo provides a table of action codes in the [Bill Status User Guide](https://github.com/usgpo/bill-status/blob/main/BILLSTATUS-XML_User_User-Guide.md#3-action-code-element-possible-values), but unfortunately, as the Government Publishing Office describes, there are a number of issues:
 
 > *Various code sets are used by multiple systems in the House, Senate, and Library of Congress by legislative clerks and data editors for functions independent of this bulk data set. As new codes and systems were developed, there was no coordinated effort to retroactively apply new codes to old records. Many codes are concatenated with other codes or elements or utilize free text. Codes in one set may be redundant with a different code in another code set. Additionally, some codes may have been used and re-used over the years for different purposes further complicating the ability to create an authoritative list.*
 
-But action codes will be vital for understanding how congress members interact with legislation, so I'll need to develop my own set of categories to break down the different kinds of committee and floor actions. To start, I join in these codes using a simple two column csv file to see where we have action code information.
+I'll need to develop my own set of categories to break down the different kinds of committee and floor actions. To start, I join these codes using a two column csv file to see where we have action code information.
 
 ```{r}
 #| label:  action-codes
