@@ -328,13 +328,25 @@ Below are a list of the cases I have found:
 -   Action code `E30000` and `36000` with action type `President` and `BecameLaw` respectively appear to both represent the president signing a bill into law, while action codes `E40000` and `36000` with the same respective action types represent a bill becoming a public law. In this case, action type `President` and `BecameLaw` are interchangeable
 -   Action code `Intro-H` appears to be a duplicate of action code `1000`, both of which are `IntroReferral` action types
 
-## Intro/Referral
+# Intro/Referral
+
+Legislation must be introduced either in the House or the Senate. Their designation depends on the type of legislation being introduced and the number of bills already introduced in the current congressional session. Bills are then referred to relevant committees to be further developed.
+
+> Upon introduction, the bill will receive a designation based on the chamber of introduction, for example, H.R. or H.J.Res. for House-originated bills or joint resolutions and S. or S.J.Res. for Senate-originated measures. It will also receive a number, which typically is the next number available in sequence during that two-year Congress.
+>
+> In the House, bills then are referred by the Speaker, on the advice of the nonpartisan [parliamentarian](https://www.congress.gov/help/legislative-glossary#glossary_parliamentarian "US Congress glossary entry for parliamentarian"), to all committees that have jurisdiction over the provisions in the bill, as determined by the chamber's standing rules and past referral decisions.\
+> ...\
+> In the Senate, bills are typically referred to committee in a similar process, though in almost all cases, the bill is referred to only the committee with jurisdiction over the issue that predominates in the bill. In a limited number of cases, a bill might not be referred to committee, but instead be placed directly on the Senate Calendar of Business through a series of procedural steps on the floor.
+
+```{r}
+(intro_actions = actions_joined %>% 
+  filter(action_type == "IntroReferral"))
+```
 
 Which source are Intro/Referral actions coming from?
 
 ```{r}
-(intro_actions = actions_joined %>% 
-  filter(action_type == "IntroReferral")) %>% 
+intro_actions %>% 
   count(action_source_name, sort = T)
 ```
 
@@ -522,7 +534,7 @@ These can be grouped into the following:
   count(action_cat, sort = T)
 ```
 
-## Committee
+# Committee
 
 What actions do we have for committees?
 
@@ -714,7 +726,7 @@ committee_actions_categorised %>%
   mutate(action_code_combined = coalesce(Action, committee_action_cat))
 ```
 
-## Floor
+# Floor
 
 ```{r }
 #| label: floor-action-codes
@@ -894,7 +906,7 @@ Floor actions which do not have an action code appear to be Senate actions, but 
 
 `E20000` is the same as the `28000` action code under the President action type
 
-## Discharge
+# Discharge
 
 ```{r}
 #| label: discharge-action-codes
@@ -927,7 +939,7 @@ actions_joined %>%
 
 : Discharge Action Codes
 
-## President
+# President
 
 ```{r }
 #| label: president-action-codes
@@ -959,7 +971,7 @@ actions_joined %>%
 
 : President Action Codes
 
-## Became Law
+# Became Law
 
 ```{r }
 #| label:  becamelaw-action-codes
@@ -990,7 +1002,7 @@ actions_joined %>%
 
 : Became Law Action Codes
 
-## Missing Action Type
+# Missing Action Type
 
 ```{r }
 #| label:  missing-actions
