@@ -324,6 +324,85 @@ actions_joined %>%
   #        starts_with("IntroReferral"), starts_with("Committee"), 
   #        starts_with("Floor"), starts_with("Discharge"), 
   #        starts_with("President"), starts_with("BecameLaw"), starts_with("NA"))
+
+```
+
+```{r}
+#| label: source-by-type
+(action_source_by_type = actions_joined %>%
+    # Count actions in each source
+    add_count(action_source_name, name = "source_actions") %>%
+    group_by(action_source_name, source_actions, action_type) %>%
+    summarise(
+    bills = n_distinct(bill_id),
+    actions = n(),
+    # actions_pct = scales::percent(n()/unique(source_actions), accuracy = .1),
+    actions_pct = actions/unique(source_actions),
+    .groups = "drop"
+    # bills_pct = bills/sum(bills)
+))
+```
+
+```{r}
+action_source_by_type %>%
+  pivot_wider(id_cols = action_source_name,
+              names_from = action_type,
+              values_from = c(bills, actions, actions_pct),
+              names_glue = "{action_type}_{.value}",
+              values_fn = list(actions_pct = scales::percent),
+              values_fill = list(bills = 0, actions = 0, actions_pct = "0%")) %>%
+  select(action_source_name,
+         starts_with("IntroReferral"), starts_with("Committee"),
+          starts_with("Floor"), starts_with("Discharge"),
+          starts_with("President"), starts_with("BecameLaw"), starts_with("NA")) %>%
+  # colnames()
+  reactable(theme = moke_rt(),
+            columns = list(
+              "IntroReferral_actions" = colDef(name = "Actions", width = 80),
+              "IntroReferral_actions_pct" = colDef(name = "%"),
+              "IntroReferral_bills" = colDef(name = "Bills"),
+              "Committee_actions" = colDef(name = "Actions"),
+              "Committee_actions_pct" = colDef(name = "%"),
+              "Committee_bills" = colDef(name = "Bills"),
+              "Floor_actions" = colDef(name = "Actions"),
+              "Floor_actions_pct" = colDef(name = "%"),
+              "Floor_bills" = colDef(name = "Bills"),
+              "Discharge_actions" = colDef(name = "Actions"),
+              "Discharge_actions_pct" = colDef(name = "%"),
+              "Discharge_bills" = colDef(name = "Bills"),
+              "President_actions" = colDef(name = "Actions"),
+              "President_actions_pct" = colDef(name = "%"),
+              "President_bills" = colDef(name = "Bills"),
+              "BecameLaw_actions" = colDef(name = "Actions"),
+              "BecameLaw_actions_pct" = colDef(name = "%"),
+              "BecameLaw_bills" = colDef(name = "Bills"),
+              "NA_actions" = colDef(name = "Actions"),
+              "NA_actions_pct" = colDef(name = "%"),
+              "NA_bills" = colDef(name = "Bills")
+            ),
+            columnGroups = list(
+              colGroup(name = "Intro/Referral",
+                       columns = c("IntroReferral_actions",
+                                  "IntroReferral_actions_pct",
+                                  "IntroReferral_bills")),
+              colGroup(name = "Committee",
+                        columns = c("Committee_actions", "Committee_actions_pct",
+                        "Committee_bills")),
+              colGroup(name = "Floor",
+                        columns = c("Floor_actions", "Floor_actions_pct",
+                        "Floor_bills")),
+              colGroup(name = "Discharge",
+                        columns = c("Discharge_actions", "Discharge_actions_pct",
+                        "Discharge_bills")),
+              colGroup(name = "President",
+                        columns = c("President_actions", "President_actions_pct",
+                        "President_bills")),
+              colGroup(name = "Became Law",
+                        columns = c("BecameLaw_actions", "BecameLaw_actions_pct",
+                        "BecameLaw_bills")),
+              colGroup(name = "Missing",
+                       columns = c("NA_actions", "NA_actions_pct", "NA_bills"))
+))
 ```
 
 The majority of actions from the **House floor actions** source are Intro/Referrals?
