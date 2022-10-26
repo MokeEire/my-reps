@@ -91,7 +91,7 @@ count(actions_unnested, bill_id) %>%
   scale_fill_manual(name = NULL, values = viz_colours[1:2])+
   # Labels
   labs(x = "Actions", y = "Bills", 
-       title = "How many actions occur on each bill?",
+       title = "How many actions are recorded on each bill?",
        subtitle = "Distribution of actions on bills")+
   theme_moke(plots_pane = T)+
   theme(axis.line.y = element_blank(),
@@ -99,9 +99,26 @@ count(actions_unnested, bill_id) %>%
 ```
 
 ```{r}
-# Count rows for each bill
+# Count actions for each bill
 count(actions_unnested, bill_id, name = "actions") %>% 
   summary()
+```
+
+```{r}
+# Count actions for each bill
+count(actions_unnested, bill_type_cat, bill_id, name = "actions") %>% 
+  # Group by bill type
+  group_by(bill_type_cat) %>% 
+  # summary stats
+  summarise(
+    n_bills = n_distinct(bill_id),
+    min = min(actions),
+    p25 = quantile(actions, .25),
+    median = median(actions),
+    mean = mean(actions),
+    p75 = quantile(actions, .75),
+    max = max(actions)
+  )
 ```
 
 There are a few different columns we can use to categorise actions:
@@ -112,7 +129,7 @@ There are a few different columns we can use to categorise actions:
 
 -   `action_source_name`
 
-As described by Congress' website, the legislative process most generally maps to `action_type`. `action_code` is useful for distinguishing between actions of the same type, but as we'll see it is not perfect. `action_source_name` seems to indicate the source of the particular action data and is useful mostly for understanding how the data is constructed.
+As described by Congress' website, the legislative process most generally maps to `action_type`. `action_code` is useful for distinguishing between actions of the same type, but as we'll see it is not perfect. `action_source_name` seems to indicate the source of the action data and is useful for understanding how the data is constructed. Below are the counts of each variable.
 
 ```{r}
 #| layout-nrow: 1
@@ -123,7 +140,7 @@ count(actions_unnested, action_code)
 count(actions_unnested, action_source_name)
 ```
 
-On how many bills do each type of action occur?
+What proportion of bills contain each type of action?
 
 ```{r}
 # add action count for each bill
