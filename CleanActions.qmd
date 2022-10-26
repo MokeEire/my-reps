@@ -47,11 +47,15 @@ First, let's `unnest()` actions from the bills data and see what action-level in
 # (this includes the actions list column)
 (actions_unnested = select(all_bills, 
                            bill_id, title, bill_type, actions) %>% 
+    mutate(bill_type_cat = case_when(bill_type %in% c("HR", "S") ~ "Bill",
+                                     bill_type %in% c("HJRES", "SJRES") ~ "Joint Resolution",
+                                     bill_type %in% c("HRES", "SRES") ~ "Simple Resolution",
+                                     bill_type %in% c("HCONRES", "SCONRES") ~ "Concurrent Resolution")) %>% 
    # Unnest actions
   unnest(actions)) %>% 
   # After assignment: Subset the data
   head(20) %>% 
-  select(bill_id, title,  
+  select(bill_id, title, bill_type_cat, 
          action_date, action_time, 
          action_type, action_code,
          action_text,
