@@ -162,19 +162,22 @@ actions_order = c("IntroReferral", "Committee", "Floor",
   arrange(action_ts)) %>% View()
 ```
 
+### Timeline
+
 What does a timeline look like?
 
 ```{r}
+#| label: hr3684-actions-table
+#| column: page
 hr3684_actions_ts %>% 
-  count(action_source_name, action_ts, action_date, action_type) %>% 
-  ggplot(., aes(x = action_ts, y = action_source_name))+
-  geom_point(shape = 21, aes(size = n, fill = action_type), 
-             alpha = .8, colour = my_col_pal[2], show.legend = F)+
-  scale_x_datetime(labels = scales::label_date_short())+
-  labs(x = NULL, y = NULL,
-       title = "How H.R. 3684 became law",
-       subtitle = "Legislative action timeline for H.R. 3684, by action source")+
-  theme_moke(plots_pane = T)
+  select(action_ts, action_text, action_type, action_committee_name,
+         action_source_name) %>% 
+  reactable(theme = moke_rt(),
+            resizable = T,
+            columns = list(
+              action_ts = colDef(format = colFormat(datetime = T)),
+              action_text = colDef(minWidth = 200)
+            ))
 ```
 
 The order of operations for HR 3684
@@ -182,30 +185,268 @@ The order of operations for HR 3684
 1.  Introduced in House
 2.  Referred to Committee on Transportation and Infrastructure
 
-+------------+---------------------------------------------------------------------+
-| Date       | Event                                                               |
-+============+=====================================================================+
-| 2021-06-04 | Introduced in House                                                 |
-+------------+---------------------------------------------------------------------+
-| 2021-06-04 | Referred to Committee on Transportation and Infrastructure          |
-+------------+---------------------------------------------------------------------+
-| 2021-06-07 | Referred to Subcommittees                                           |
-|            |                                                                     |
-|            | -   Railroads, Pipelines, and Hazardous Materials                   |
-|            |                                                                     |
-|            | -   Highways and Transit                                            |
-+------------+---------------------------------------------------------------------+
-| 2021-06-09 | Subcommittees discharged                                            |
-+------------+---------------------------------------------------------------------+
-| 2021-06-10 | Committee Consideration and Mark-Up                                 |
-|            |                                                                     |
-|            | Ordered (Voted) to be Reported                                      |
-+------------+---------------------------------------------------------------------+
-| 2021-06-22 | Placed on Union Calendar                                            |
-|            |                                                                     |
-|            | Reported w/amendment by Transportation and Infrastructure Committee |
-+------------+---------------------------------------------------------------------+
-|            |                                                                     |
-+------------+---------------------------------------------------------------------+
++------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| Date       | Event                                                                                                                                                                                            |
++============+==================================================================================================================================================================================================+
+| 2021-06-04 | Introduced in House                                                                                                                                                                              |
++------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 2021-06-04 | Referred to Committee on Transportation and Infrastructure                                                                                                                                       |
++------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 2021-06-07 | Referred to Subcommittees                                                                                                                                                                        |
+|            |                                                                                                                                                                                                  |
+|            | -   Railroads, Pipelines, and Hazardous Materials                                                                                                                                                |
+|            |                                                                                                                                                                                                  |
+|            | -   Highways and Transit                                                                                                                                                                         |
++------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 2021-06-09 | Subcommittees discharged                                                                                                                                                                         |
++------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 2021-06-10 | Committee Consideration and Mark-Up                                                                                                                                                              |
+|            |                                                                                                                                                                                                  |
+|            | Ordered (Voted) to be Reported                                                                                                                                                                   |
++------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 2021-06-21 | Placed on Union Calendar                                                                                                                                                                         |
+|            |                                                                                                                                                                                                  |
+|            | Reported w/amendment by Transportation and Infrastructure Committee                                                                                                                              |
++------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 2021-06-28 | HRes 504: Rules Committee Resolution provides 90 mins of general debate on H.R.3684                                                                                                              |
+|            |                                                                                                                                                                                                  |
+|            | Supplemental report filed by Committee on Transportation                                                                                                                                         |
++------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 2021-06-29 | HRes 508: Rules Committee Resolution states that each amendment printed in their report after the debate shall:                                                                                  |
+|            |                                                                                                                                                                                                  |
+|            | -   only be considered in the order printed in the report                                                                                                                                        |
+|            |                                                                                                                                                                                                  |
+|            | -   be offered only by a member designated in the report                                                                                                                                         |
+|            |                                                                                                                                                                                                  |
+|            | -   only be considered read and debatable for the time specified                                                                                                                                 |
++------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 2021-06-30 | HRes 508 passed House                                                                                                                                                                            |
+|            |                                                                                                                                                                                                  |
+|            | Considered under provisions of HRes 504                                                                                                                                                          |
+|            |                                                                                                                                                                                                  |
+|            | Rules provide for consideration of bill, resolution provides "en bloc suspension authority"                                                                                                      |
+|            |                                                                                                                                                                                                  |
+|            | Debate                                                                                                                                                                                           |
+|            |                                                                                                                                                                                                  |
+|            | -   20 minutes of debate on Lamb amendment en bloc No. 1                                                                                                                                         |
+|            |                                                                                                                                                                                                  |
+|            |     -   Voice vote on adoption of amendment. Chair announced ayes prevailed. Mr. Graves demanded yeas and nays (i.e. the vote count?). Chair postponed proceedings until a time to be announced. |
+|            |                                                                                                                                                                                                  |
+|            | -   20 mins of debate on Lamb amendment en bloc No. 2                                                                                                                                            |
+|            |                                                                                                                                                                                                  |
+|            | -   20 mins of debate on DeFazio amendment en bloc No. 3                                                                                                                                         |
+|            |                                                                                                                                                                                                  |
+|            |     -   Voice vote on adoption of amendment. Chair announced ayes prevailed. Mr. DeFazio demanded the yeas and nays. Chair postponed proceedings until time to be announced                      |
+|            |                                                                                                                                                                                                  |
+|            | -   20 mins of debate on DeFazio amendment en bloc No. 4                                                                                                                                         |
+|            |                                                                                                                                                                                                  |
+|            |     -   Voice vote on adoption of amendment. Chair announced ayes prevailed. Mr. Crawford demanded the yeas and nays. Chair postponed proceedings until time to be announced                     |
+|            |                                                                                                                                                                                                  |
+|            | -   10 mins of debate on Cammack amendment No. 10                                                                                                                                                |
+|            |                                                                                                                                                                                                  |
+|            | -   10 mins of debate on Van Duyne amendment No. 108                                                                                                                                             |
+|            |                                                                                                                                                                                                  |
+|            |     -   Voice vote on adoption of amendment. Chair announced noes prevailed. Ms. Van Duyne demanded the yeas and nays. Chair postponed proceedings until time to be announced                    |
+|            |                                                                                                                                                                                                  |
+|            | Motion to reconsider laid on table. Agreed without objection.                                                                                                                                    |
+|            |                                                                                                                                                                                                  |
+|            | Motion to reconsider laid on table. Agreed without objection.                                                                                                                                    |
+|            |                                                                                                                                                                                                  |
+|            | Motion to reconsider laid on table. Agreed without objection.                                                                                                                                    |
+|            |                                                                                                                                                                                                  |
+|            | Debate                                                                                                                                                                                           |
+|            |                                                                                                                                                                                                  |
+|            | -   20 mins of debate on Davids (KS) amendment en bloc No. 5                                                                                                                                     |
+|            |                                                                                                                                                                                                  |
+|            |     -   Voice vote on adoption of amendment. Chair announced ayes prevailed. Mr. Rouzerdemanded the yeas and nays. Chair postponed proceedings until time to be announced                        |
+|            |                                                                                                                                                                                                  |
+|            | -   10 mins of debate on the Lee (NV) amendment No. 132                                                                                                                                          |
+|            |                                                                                                                                                                                                  |
+|            | Further proceedings postponed                                                                                                                                                                    |
++------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 2021-07-01 | Chair announced unfinished business was on adoption of amendments                                                                                                                                |
+|            |                                                                                                                                                                                                  |
+|            | Motion to reconsider laid on table. Agreed without objection.                                                                                                                                    |
+|            |                                                                                                                                                                                                  |
+|            | Motion to reconsider laid on table. Agreed without objection.                                                                                                                                    |
+|            |                                                                                                                                                                                                  |
+|            | Previous question ordered pursuant to the rule                                                                                                                                                   |
+|            |                                                                                                                                                                                                  |
+|            | Mr. Gibbs moved to recommit to the Committee on Transportation and Infrastructure                                                                                                                |
+|            |                                                                                                                                                                                                  |
+|            | Previous question on the motion to recommit was ordered pursuant to clause 2b of rule XIX                                                                                                        |
+|            |                                                                                                                                                                                                  |
+|            | On motion to recommit: Failed by Yeas/Nays - 202/217                                                                                                                                             |
+|            |                                                                                                                                                                                                  |
+|            | On passage: Passed by Yeas/Nays - 221/201                                                                                                                                                        |
+|            |                                                                                                                                                                                                  |
+|            | Motion to reconsider laid on the table Agreed to without objection.                                                                                                                              |
+|            |                                                                                                                                                                                                  |
+|            | Clerk authorized to make corrections to finalize document                                                                                                                                        |
++------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 2021-07-11 | Received in the Senate. Read once. Placed on Senate Legislative Calendar                                                                                                                         |
++------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 2021-07-12 | Read a second time. Placed on Senate Legislative Calendar under General Orders.                                                                                                                  |
++------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 2021-07-18 | Cloture motion on the motion to proceed to the measure presented.                                                                                                                                |
+|            |                                                                                                                                                                                                  |
+|            | Motion to proceed to consideration                                                                                                                                                               |
++------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 2021-07-20 | Motion by Senator Schumer to reconsider vote by which cloture on the motion to proceed to the measure was not invoked                                                                            |
+|            |                                                                                                                                                                                                  |
+|            | Cloture on the motion to proceed not invoked by Yeas/Nays - 49/51                                                                                                                                |
++------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 2021-07-27 | Motion to proceed to measure considered in Senate                                                                                                                                                |
+|            |                                                                                                                                                                                                  |
+|            | Motion by Senator Schumer to reconsider the vote by which cloture on the motion to proceed was not invoked                                                                                       |
+|            |                                                                                                                                                                                                  |
+|            | Motion to proceed to consideration of the motion to reconsider the vote by which cloture on the motion to proceed was not invoked                                                                |
+|            |                                                                                                                                                                                                  |
+|            | Upon reconsideration, cloture on motion to proceed invoked by Yeas/Nays - 67/32                                                                                                                  |
++------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 2021-07-28 | Motion to proceed to measure considered in Senate                                                                                                                                                |
++------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 2021-07-29 | Measure laid before Senate by motion                                                                                                                                                             |
+|            |                                                                                                                                                                                                  |
+|            | Motion to proceed to measure considered in Senate.                                                                                                                                               |
+|            |                                                                                                                                                                                                  |
+|            | Motion to proceed to consideration of measure agreed to in Senate by Yea-Nay Vote. 66 - 28.                                                                                                      |
++------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 2021-07-31 | Considered by Senate                                                                                                                                                                             |
++------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 2021-08-01 | Considered by Senate                                                                                                                                                                             |
++------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 2021-08-02 | Considered by Senate                                                                                                                                                                             |
++------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 2021-08-03 | Considered by Senate                                                                                                                                                                             |
++------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 2021-08-04 | Considered by Senate                                                                                                                                                                             |
+|            |                                                                                                                                                                                                  |
+|            | Cloture motion on the measure presented in Senate                                                                                                                                                |
++------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 2021-08-06 | Considered by Senate                                                                                                                                                                             |
++------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 2021-08-07 | Cloture on the measure invoked in Senate by Yea-Nay Vote. 68 - 29                                                                                                                                |
+|            |                                                                                                                                                                                                  |
+|            | Considered by Senate                                                                                                                                                                             |
++------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 2021-08-08 | Considered by Senate                                                                                                                                                                             |
++------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 2021-08-09 | Considered by Senate                                                                                                                                                                             |
+|            |                                                                                                                                                                                                  |
+|            | Passed Senate with an amendment by Yea-Nay Vote. 69 - 30                                                                                                                                         |
++------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 2021-08-15 | Message on Senate action sent to the House                                                                                                                                                       |
++------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 2021-09-27 | Mr. DeFazio moved that the House agree to the Senate amendment                                                                                                                                   |
+|            |                                                                                                                                                                                                  |
+|            | Debate:                                                                                                                                                                                          |
+|            |                                                                                                                                                                                                  |
+|            | -   The House proceeded with one hour of debate on the motion to agree to Senate amendment                                                                                                       |
+|            |                                                                                                                                                                                                  |
+|            | -   Chair announced further proceedings on agreeing to Senate amendment postponed                                                                                                                |
++------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 2021-09-28 | Debate:                                                                                                                                                                                          |
+|            |                                                                                                                                                                                                  |
+|            | -   House proceeded with further debate on motion to agree to Senate amendment                                                                                                                   |
+|            |                                                                                                                                                                                                  |
+|            | The previous question was ordered pursuant to the rule.                                                                                                                                          |
+|            |                                                                                                                                                                                                  |
+|            | Voice vote on adoption of amendment. Chair announced ayes prevailed. Mr. Graves (MO) demanded the yeas and nays. Chair postponed proceedings until time to be announced                          |
++------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 2021-10-01 | Considered as unfinished business                                                                                                                                                                |
+|            |                                                                                                                                                                                                  |
+|            | Postponed proceedings                                                                                                                                                                            |
++------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 2021-11-04 | Resolving differences: On motion that the House agree to the Senate amendment Agreed to by the Yeas and Nays: 228 - 206                                                                          |
++------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 2021-11-05 | Kelly (IL) moved to reconsider the vote.                                                                                                                                                         |
+|            |                                                                                                                                                                                                  |
+|            | Mr. Horsford moved to table the motion to reconsider the vote                                                                                                                                    |
+|            |                                                                                                                                                                                                  |
+|            | On motion to table the motion to reconsider Agreed to by the Yeas and Nays: 228 - 205                                                                                                            |
+|            |                                                                                                                                                                                                  |
+|            | Motion to reconsider laid on the table Agreed to without objection.                                                                                                                              |
++------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 2021-11-07 | Presented to President.                                                                                                                                                                          |
++------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 2021-11-14 | Became Public Law No: 117-58.                                                                                                                                                                    |
++------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 
 : Timeline
+
+```{r}
+hr3684_actions_ts %>% 
+  count(action_source_name, action_ts, action_date, action_type_fct) %>% 
+  ggplot(., aes(x = action_ts, y = action_type_fct))+
+  geom_point(shape = 21, aes(size = n), fill = viz_colours[1], 
+             alpha = .8, colour = my_col_pal[2], show.legend = F)+
+  scale_x_datetime(labels = scales::label_date_short())+
+  labs(x = NULL, y = NULL,
+       title = "How H.R. 3684 became law",
+       subtitle = "Legislative action timeline for H.R. 3684, by action type")+
+  theme_moke(plots_pane = T)
+```
+
+What actions come from Library of Congress? A lot seem like duplicates.
+
+```{r}
+(hr3684_loc = hr3684_actions_ts %>% 
+  filter(action_source_name == "Library of Congress"))
+```
+
+```{r}
+hr3684_actions_ts %>% 
+  filter(action_text %in% hr3684_loc$action_text) %>% View()
+```
+
+What's going on?
+
+-   Duplicate intro actions coded `Intro-H` and `1000` both come from LoC
+
+-   action code `5000` from LoC is repeating the committee report filing actions `H12200` and `H12210`
+
+-   Passage of house and senate only identified by LoC, as well as resolving differences, a bill becoming law and being signed by president
+
+-   Being presented to the president (LoC code: `28000`) is repeat of House floor action `E20000`
+
+Is this the case for all bills becoming law?
+
+```{r}
+all_bills %>% 
+  select(bill_id, actions) %>% 
+  unnest(actions) %>% 
+  filter(action_code %in% c('5000', 'H12200', 'H12210', 'H12100')) %>% 
+  count(bill_id, action_date, name = "actions_on_date") %>% 
+  count(actions_on_date)
+```
+
+Bills with `5000` action code
+
+```{r}
+(bills_5000_code = all_bills %>% 
+  select(bill_id, actions) %>% 
+  unnest(actions) %>% 
+  select(bill_id,action_date, action_code, action_text, 
+         action_type, action_committee_name,
+         action_source_name) %>% 
+  group_by(bill_id) %>% 
+  filter('5000' %in% action_code) %>% 
+  ungroup()) %>% 
+  View("bills w/5000 code")
+```
+
+So we want to remove `5000` actions in cases where there are no duplicate actions. We know `H12200`, `H12210`, `H12100` action codes seem to be duplicates of `5000`. Are there any others? What actions occur on the same date as `5000` actions?
+
+```{r}
+bills_5000_code %>% 
+  filter(action_code == '5000') %>% 
+  select(bill_id, action_date) %>% 
+  inner_join(bills_5000_code, by = c("action_date", "bill_id")) %>% 
+  filter(!(action_code %in% c("H12410", "H12300", "5500", "H37220", "H8D000",
+                              "H30300", "H30000", "H38800", "H38310",
+                              "H37300", "1000", "8000", "H12430", 
+                              "H1B000", "H1L210", "H12420", "H35000",
+                              "H37100"))) %>% 
+  count(action_code, sort = T)
+```
