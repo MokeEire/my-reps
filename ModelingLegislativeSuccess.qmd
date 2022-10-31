@@ -8,8 +8,11 @@ format:
     toc: true
     code-fold: true
     code-tools: true
+    df-print: paged
 editor: visual
 ---
+
+Why do some bills become law while others are destined to be a drop in the vast archives of Congress? Presumably the bills that become law address important problems of the time, are well written, and
 
 ```{r}
 #| label: setup
@@ -23,6 +26,7 @@ library(reactablefmtr)
 plan(multisession)
 source("R/parsing_functions.R")
 
+# Read in action codes data
 action_codes = read_csv(here("data", "action_codes.csv"), col_types = "cc")
 
 # Load cleaned R objects
@@ -33,18 +37,23 @@ all_bills = readRDS(here("data", "cleaned", "BILLSTATUS_117.Rds"))
 glimpse(all_bills, width = 80)
 ```
 
+# Bills that became laws
+
 To determine whether a bill became law, search `actions` for *BecameLaw* as an action type.
 
 ```{r}
 (bills_became_law = all_bills %>% 
-  mutate(became_law = map_lgl(actions, ~ "BecameLaw" %in% .$action_type)) %>% 
-  filter(became_law))
+    # Create an indicator for whether bills' actions df have a BecameLaw action
+    mutate(became_law = map_lgl(actions, ~ "BecameLaw" %in% .$action_type)) %>% 
+    # Filter to these bills only
+    filter(became_law))
 ```
 
 If a law must pass both the House and the Senate, do we have both copies of each passed bill? Spoiler: No because we have 89...
 
 ```{r}
 bills_became_law %>% 
+  # count bills' origin chamber
   count(origin_chamber)
 ```
 
@@ -52,13 +61,15 @@ I know there was a data collection issue in my past dataset, so this may be the 
 
 ```{r}
 bills_became_law %>% 
-  arrange(title)
+  arrange(title) %>% 
+  select(bill_id, title, everything())
 ```
 
 Okay so maybe we don't have copies of each bill and the origin chamber is a functional field! So how many actions are there on each of these bills that became law?
 
 ```{r}
 bills_became_law %>% 
+  # Count rows of each bill's actions df 
   mutate(n_actions = map_dbl(actions, nrow)) %>% 
   arrange(desc(n_actions))
 ```
@@ -85,7 +96,7 @@ hr3684 = filter(bills_became_law, bill_id == "HR-3684")
 s937 = filter(bills_became_law, bill_id == "S-937")
 ```
 
-# HR-3684
+# HR-3684: Infrastructure Investment and Jobs Act
 
 ```{r}
 glimpse(hr3684)
@@ -95,6 +106,7 @@ Who sponsored the bill?
 
 ```{r}
 hr3684 %>% 
+  # Select and unnest sponsors
   select(bill_id, sponsors) %>% 
   unnest(sponsors)
 ```
@@ -103,6 +115,7 @@ Who cosponsored the bill?
 
 ```{r}
 hr3684 %>% 
+  # Select and unnest cosponsors
   select(bill_id, cosponsors) %>% 
   unnest(cosponsors)
 ```
