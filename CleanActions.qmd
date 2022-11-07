@@ -454,11 +454,48 @@ Legislation must be introduced either in the House or the Senate. Their designat
   filter(action_type == "IntroReferral"))
 ```
 
-What codes are used for Intro/Referral actions?
+What data is missing for intro actions?
 
 ```{r}
-count(intro_actions, action_code, sort = T)
+intro_actions %>% 
+  summarise(across(everything(), ~sum(is.na(.))),
+            n = n()) %>% 
+  pivot_longer(-n, names_to = "column", values_to = "n_missing") %>% 
+  mutate(pct_missing = n_missing/n) %>% 
+  arrange(desc(pct_missing))
 ```
+
+How do action codes vary by bill type and action source?
+
+::: panel-tabset
+## Bill Type
+
+```{r}
+intro_actions %>% 
+  group_by(bill_type_cat) %>%
+  # Count actions, actions w/code, and coded proportion
+  summarise(
+    actions = n(),
+    actions_coded = sum(!is.na(Action)),
+    actions_coded_pct = scales::percent(actions_coded/actions),
+    .groups = "drop"
+  )
+```
+
+## Source
+
+```{r}
+intro_actions %>% 
+  # Count actions by action source
+  group_by(action_source_name) %>%
+  summarise(
+    actions = n(),
+    actions_coded = sum(!is.na(Action)),
+    actions_coded_pct = scales::percent(actions_coded/actions),
+    .groups = "drop"
+  )
+```
+:::
 
 Which source are Intro/Referral actions coming from?
 
@@ -469,12 +506,19 @@ intro_actions %>%
 
 ## Action Codes
 
-What action codes do we have for Intro/Referral actions and what source system are they coming from?
+What codes are used for Intro/Referral actions and which of these codes have descriptions?
 
 ```{r}
-intro_actions %>% 
-  count(action_code, Action, action_source_name, sort = T)
+count(intro_actions, action_code, Action, sort = T)
 ```
+
+What sources are the action codes coming from?
+
+```{r}
+count(intro_actions, action_code, action_source_name, sort = T)
+```
+
+So all of the missing action codes are coming from the Senate.
 
 Look at the action texts each action code has.
 
@@ -485,18 +529,27 @@ intro_actions %>%
   # Count the text associated with each action code
   count(action_code, code_count, action_text, name = "text_count") %>%
   # Sort by most frequent codes, then texts
-  arrange(desc(code_count), action_code, desc(text_count))
+  arrange(desc(code_count), action_code, desc(text_count)) %>% 
+  group_split(action_code)
 ```
 
 Below is a table of the action codes and their meaning
 
-| Action Code | Action                                                   | Given/Inferred |
-|-------------|----------------------------------------------------------|----------------|
-| `1000`      | Introduced in House                                      | Given          |
-| `B00100`    | Sponsor introductory remarks on measure                  | Inferred       |
-| `H11100`    | Referred to Committee                                    | Inferred       |
-| `H11210`    | Committee granted an extension for further consideration | Inferred       |
-| `Intro-H`   | Introduced in House                                      | Inferred       |
++-------------+----------------------------------------------------------+------------+
+| Action Code | Action                                                   | Provided   |
++=============+==========================================================+============+
+| `1000`      | Introduced in House                                      | X          |
++-------------+----------------------------------------------------------+------------+
+| `10000`     | Introduced in Senate                                     | X          |
++-------------+----------------------------------------------------------+------------+
+| `B00100`    | Sponsor introductory remarks on measure                  |            |
++-------------+----------------------------------------------------------+------------+
+| `H11100`    | Referred to Committee                                    |            |
++-------------+----------------------------------------------------------+------------+
+| `H11210`    | Committee granted an extension for further consideration |            |
++-------------+----------------------------------------------------------+------------+
+| `Intro-H`   | Introduced in House                                      |            |
++-------------+----------------------------------------------------------+------------+
 
 #### Duplicates
 
@@ -510,6 +563,22 @@ actions_to_compare = c("1000", "Intro-H")
 (compare_intro_actions = intro_actions %>% 
   filter(action_code %in% actions_to_compare)) %>% 
   glimpse(width = 80)
+```
+
+Do bills typically have both of these actions?
+
+```{r}
+compare_intro_actions %>% 
+  count(bill_id, wt = n_distinct(action_code), name = "code_count") %>% 
+  count(code_count)
+```
+
+Does one of the actions occur on every bill?
+
+```{r}
+compare_intro_actions %>% 
+  # Count bills action codes occur on
+  count(action_code, wt = n_distinct(bill_id))
 ```
 
 How many bills have both actions? And how many bills does each action occur on?
