@@ -40,6 +40,8 @@ Using the `clean_data.R` script, I parsed govinfo's house and senate bill data f
 
 -   Categorizing and coding actions which are missing codes and/or descriptions
 
+# Overview of the data
+
 First, let's `unnest()` actions from the bills data and see what action-level information looks like.
 
 ```{r}
@@ -70,7 +72,19 @@ We can also use `glimpse()` to give us the dimensions of the data, the data type
 glimpse(actions_unnested, width = 80)
 ```
 
-The data consists of `r scales::comma(nrow(actions_unnested))` actions from `r scales::comma(n_distinct(actions_unnested$bill_id))` bills.
+Possible action information includes:
+
+-   the date of the action, in some cases the time
+
+-   the source system which records the action
+
+-   a description of the action
+
+-   the type of action and a code for it
+
+-   the committee related to the action
+
+The data contains `r scales::comma(nrow(actions_unnested))` actions from `r scales::comma(n_distinct(actions_unnested$bill_id))` bills.
 
 ```{r}
 # Count actions by chamber and bill
