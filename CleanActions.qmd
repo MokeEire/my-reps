@@ -535,14 +535,21 @@ intro_actions %>%
 
 Below is a table of the action codes and their meaning
 
-| Action Code | Action                                                   | Provided |
-|-------------|----------------------------------------------------------|----------|
-| `1000`      | Introduced in House                                      | X        |
-| `10000`     | Introduced in Senate                                     | X        |
-| `B00100`    | Sponsor introductory remarks on measure                  |          |
-| `H11100`    | Referred to Committee                                    |          |
-| `H11210`    | Committee granted an extension for further consideration |          |
-| `Intro-H`   | Introduced in House                                      |          |
++-------------+----------------------------------------------------------+------------+
+| Action Code | Action                                                   | Provided   |
++=============+==========================================================+============+
+| `1000`      | Introduced in House                                      | X          |
++-------------+----------------------------------------------------------+------------+
+| `10000`     | Introduced in Senate                                     | X          |
++-------------+----------------------------------------------------------+------------+
+| `B00100`    | Sponsor introductory remarks on measure                  |            |
++-------------+----------------------------------------------------------+------------+
+| `H11100`    | Referred to Committee                                    |            |
++-------------+----------------------------------------------------------+------------+
+| `H11210`    | Committee granted an extension for further consideration |            |
++-------------+----------------------------------------------------------+------------+
+| `Intro-H`   | Introduced in House                                      |            |
++-------------+----------------------------------------------------------+------------+
 
 #### Duplicates
 
