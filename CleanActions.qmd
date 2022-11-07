@@ -135,6 +135,8 @@ count(actions_unnested, bill_type_cat, bill_id, name = "actions") %>%
   )
 ```
 
+So the vast majority of bills have 5 or fewer actions recorded on them. This will likely change by the time the legislative session is
+
 There are a few different columns we can use to categorise actions:
 
 -   `action_type`
@@ -143,7 +145,9 @@ There are a few different columns we can use to categorise actions:
 
 -   `action_source_name`
 
-As described by Congress' website, the legislative process most generally maps to `action_type`. `action_code` is useful for distinguishing between actions of the same type, but as we'll see it is not perfect. `action_source_name` seems to indicate the source of the action data and is useful for understanding how the data is constructed. Below are the counts of each variable.
+As described by Congress' website, the legislative process *generally* maps to `action_type` - Introductions, Committees, Floor actions, etc.. `action_code` is useful for distinguishing between actions of the same type, but as we'll see it is not perfect. `action_source_name` seems to indicate the source of the action data and is useful for understanding how the data is constructed.
+
+Below are the counts of each variable.
 
 ```{r}
 #| layout-nrow: 1
@@ -154,7 +158,9 @@ count(actions_unnested, action_code)
 count(actions_unnested, action_source_name)
 ```
 
-What proportion of bills contain each type of action?
+## Action Type
+
+How often does each type of action occur on a bill?
 
 ```{r}
 # add action count for each bill
@@ -164,15 +170,17 @@ add_count(actions_unnested, action_type, name = "actions") %>%
   # Count bills by action count
   count(action_type, actions, total_bills, 
         wt = n_distinct(bill_id), name = "bills") %>% 
-  mutate(bill_prop = scales::percent(bills/total_bills)) %>% 
+  mutate(action_freq = scales::percent(bills/total_bills)) %>% 
   select(-total_bills)
 ```
+
+## Action Codes
 
 govinfo provides a table of action codes in the [Bill Status User Guide](https://github.com/usgpo/bill-status/blob/main/BILLSTATUS-XML_User_User-Guide.md#3-action-code-element-possible-values), but unfortunately, as the Government Publishing Office describes, there are a number of issues:
 
 > *Various code sets are used by multiple systems in the House, Senate, and Library of Congress by legislative clerks and data editors for functions independent of this bulk data set. As new codes and systems were developed, there was no coordinated effort to retroactively apply new codes to old records. Many codes are concatenated with other codes or elements or utilize free text. Codes in one set may be redundant with a different code in another code set. Additionally, some codes may have been used and re-used over the years for different purposes further complicating the ability to create an authoritative list.*
 
-I'll need to develop my own set of categories to break down the different kinds of committee and floor actions. To start, I join these codes using a two column csv file to see where we have action code information. This looks like:
+So action codes will need a good bit of cleaning before they're useful. To start, I join the codes that do exist using a two column csv file to see where we have action code information. This looks like:
 
 ```{r}
 #| label:  action-codes
@@ -182,10 +190,12 @@ I'll need to develop my own set of categories to break down the different kinds 
   glimpse(width = 80)
 ```
 
-There are two types of issues here:
+The action code data has two types of issues here:
 
 1.  Missing action codes
-2.  Having an action code, but missing a description for that code
+2.  Missing a code description, but having action codes
+
+How often do these occur?
 
 ```{r}
 #| label: action-code-stats
@@ -193,48 +203,52 @@ There are two types of issues here:
 actions_joined %>% 
   summarise(
     actions = n(),
-    actions_codes = sum(!is.na(action_code)),
-    actions_codes_desc = sum(!is.na(Action)),
-    actions_codes_no_desc = sum(!is.na(action_code)&is.na(Action))
+    code_present = sum(!is.na(action_code)),
+    desc_present = sum(!is.na(Action)),
+    code_no_desc = sum(!is.na(action_code)&is.na(Action))
   )
+
+```
+
+How does action code presence vary by action type?
+
+```{r}
+#| label: action-code-freq-bar
+#| fig-height: 6
 
 # Count actions with codes and descriptions by bill and action type
 action_codes_summary_stats = actions_joined %>% 
   # Make missing action types explicit
   mutate(action_type = fct_explicit_na(action_type)) %>% 
   # Count coded actions by chamber and action type
-  group_by(bill_type_cat, action_type) %>% 
+  group_by(action_type) %>% 
   summarise(
     actions = n(),
-    actions_coded = sum(!is.na(action_code)),
-    actions_coded_pct = actions_coded/actions,
-    actions_coded_desc = sum(!is.na(Action)),
-    actions_coded_desc_pct = actions_coded_desc/actions,
-    actions_coded_no_desc = sum(!is.na(action_code)&is.na(Action)),
-    actions_coded_no_desc_pct = actions_coded_no_desc/actions,
+    code_present = sum(!is.na(action_code)),
+    code_present_pct = code_present/actions,
+    desc_present = sum(!is.na(Action)),
+    desc_present_pct = desc_present/actions,
+    code_no_desc = sum(!is.na(action_code)&is.na(Action)),
+    code_no_desc_pct = code_no_desc/actions,
     .groups = "drop"
   )
-```
-
-```{r}
-#| label: action-code-freq-bar
-#| fig-height: 6
 
 action_codes_summary_stats %>% 
   # Plot
-  ggplot(., aes(y = fct_rev(action_type), group = bill_type_cat))+
+  ggplot(., aes(y = fct_rev(action_type)))+
   # All actions
   geom_col(aes(x = actions),
            position = position_dodge(width = 1),
            colour = my_col_pal[3], alpha = .85)+
   # Coded actions
-  geom_col(aes(x = actions*actions_coded_pct, fill = bill_type_cat),
+  geom_col(aes(x = actions*code_present_pct),
+           fill = viz_colours[1],
            colour = my_col_pal[3],
            position = position_dodge(width = 1),
            alpha = .95)+
   # Coded actions
-  ggpattern::geom_col_pattern(aes(x = actions*actions_coded_no_desc_pct,
-                                  pattern_fill = bill_type_cat),
+  ggpattern::geom_col_pattern(aes(x = actions*code_no_desc_pct),
+                                  pattern_fill = viz_colours[2],
            # pattern_colour = my_col_pal[4],
            pattern_density = .5,
            position = position_dodge(width = 1),
@@ -243,62 +257,46 @@ action_codes_summary_stats %>%
   scale_x_continuous(labels = scales::comma, 
                      breaks = scales::breaks_pretty(),
                      expand = expansion(mult = c(0, .1)))+
-  scale_fill_manual(name = NULL, values = viz_colours[1:4])+
-  ggpattern::scale_pattern_fill_manual(name = NULL, values = viz_colours[1:4])+
-  labs(title = "How often are action codes available?",
-       subtitle = "Striped area indicates there is a code but no description",
+  # scale_fill_manual(name = NULL, values = viz_colours[1:7])+
+  # ggpattern::scale_pattern_fill_manual(name = NULL, values = viz_colours[1:7])+
+  labs(title = "What actions are coded?",
+       subtitle = "Action code availability, by action type",
+       caption = "Striped area indicates code is present but no description",
        # caption = source_caption("govinfo/US GPO"),
        y = NULL, x = "Actions")+
-  facet_wrap(~bill_type_cat, scales = "free_x")+
+  # facet_wrap(~bill_type_cat, scales = "free_x")+
   theme_moke(plots_pane = T)+
   theme(legend.position = "none",
         panel.grid.major.y = element_blank(),
         panel.grid.major.x = element_line())
 ```
 
-Proportion of actions coded, grouped by different variables
-
-::: panel-tabset
-## Bill Type
-
 ```{r}
 actions_joined %>% 
-  group_by(bill_type_cat) %>%
+  group_by(action_type) %>%
   # Count actions, actions w/code, and coded proportion
   summarise(
-    actions = n(),
-    actions_coded = sum(!is.na(Action)),
-    actions_coded_pct = scales::percent(actions_coded/actions),
+    coded = sum(!is.na(action_code)),
+    not_coded = sum(is.na(action_code)),
+    coded_no_desc = sum(!is.na(action_code)&is.na(Action)),
+    actions_coded_pct = scales::percent(coded/n()),
     .groups = "drop"
   )
 ```
 
-## Source
+So we have a good bit of work to do for Intro/Referral, Committee, and Floor actions. I am going to split the data by action type to break the task up.
 
-```{r}
-actions_joined %>% 
-  # Count actions by action source
-  group_by(action_source_name) %>%
-  summarise(
-    actions = n(),
-    actions_coded = sum(!is.na(Action)),
-    actions_coded_pct = scales::percent(actions_coded/actions),
-    .groups = "drop"
-  )
-```
-:::
-
-So there's a bit of work to do to develop comprehensive coding for each type of action (except perhaps `BecameLaw`). To do this, I will look at each action type and do two things:
+So there's a bit of work to do on Committee and Floor actionsto develop comprehensive coding for each type of action (except perhaps `BecameLaw`). To do this, I will look at each action type and do two things:
 
 -   Separate actions missing an action code or have an action code but do not have a description
-
-The actions data is messy.
 
 There are a number of cases where actions are duplicated in the data which need to reconcile in order to make sense of the legislative timeline. Are we able to identify duplicate actions using action codes?
 
 How many of the actions are actually coded?
 
 Are action codes tied to the action source systems?
+
+## Action Source
 
 They're only coming from the Library of Congress. What proportion of the data does each source account for?
 
