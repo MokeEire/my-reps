@@ -795,31 +795,57 @@ committee_actions %>%
 
 ```
 
-| Action Code | Action                                    | Given/Inferred |
-|-------------|-------------------------------------------|----------------|
-| `14000`     | Reported to Senate                        | Given          |
-| `14500`     | Senate committee discharged               | Given          |
-| `5000`      | Reported to House                         | Given          |
-| `5500`      | House committee discharged                | Given          |
-| `H12100`    | House committee reported original measure | Inferred       |
-| `H12200`    | Reported or amended by committee          | Inferred       |
-| `H12210`    | Supplemental report filed                 | Inferred       |
++--------------+-------------------------------------------+----------------+
+| Action Code  | Action                                    | Given/Inferred |
++==============+===========================================+================+
+| `14000`      | Reported to Senate                        | Given          |
++--------------+-------------------------------------------+----------------+
+| `14500`      | Senate committee discharged               | Given          |
++--------------+-------------------------------------------+----------------+
+| `5000`       | Reported to House                         | Given          |
++--------------+-------------------------------------------+----------------+
+| `5500`       | House committee discharged                | Given          |
++--------------+-------------------------------------------+----------------+
+| `H12100`     | House committee reported original measure | Inferred       |
++--------------+-------------------------------------------+----------------+
+| `H12200`     | Reported or amended by committee          | Inferred       |
++--------------+-------------------------------------------+----------------+
+| `H12210`     | Supplemental report filed                 | Inferred       |
++--------------+-------------------------------------------+----------------+
 
 : Committee Action Codes
 
+```{r}
+(committee_action_codes = tribble(
+  ~action_code, ~action_desc,
+  "14000", "Reported to Senate",
+  "14500", "Senate committee discharged",
+  "5000", "Reported to House",
+  "5500", "House committee discharged",
+  "H12100", "House committee reported original measure",
+  "H12200", "Reported or amended by committee",
+  "H12210", "Supplemental report filed"
+))
+```
+
 #### Missing Action Code
 
-What about the actions which don't have a code? Let's see how many we can categorize with some regex:
+What about the actions which don't have a code? Let's see the action text and categorize with some regex.
 
 ```{r}
 committee_actions %>% 
   filter(is.na(action_code)) %>% 
-  count(action_text) %>% 
-  View("committee action texts")
+  count(action_text, sort = T)# %>% 
+  # View("committee action texts")
+```
 
-(committee_actions_categorised = committee_actions %>% 
-  filter(is.na(action_code)) %>% 
-  mutate(committee_action_cat = case_when(
+Before we categorize the actions without an action code, join the action descriptions we outlined above.
+
+```{r}
+(committee_actions_coded = committee_actions %>% 
+  left_join(committee_action_codes, by = "action_code") %>% 
+  mutate(action_desc = case_when(
+    !is.na(action_desc) ~ action_desc,
     str_detect(action_text, 
                "Referred to the Subcommittee") ~ "Referred to subcommittee",
     str_detect(action_text,
@@ -844,6 +870,10 @@ committee_actions %>%
                "Hearings [Hh]eld\\.") ~ "Hearings held",
     str_detect(action_text, 
                "Committee consideration held") ~ "Committee consideration held",
+    str_detect(action_text, 
+               "Committee Consideration and Mark\\-up") ~ "Committee Mark-up Session",
+    str_detect(action_text, 
+               "Subcommittee Consideration and Mark\\-up") ~ "Subcommittee Mark-up Session",
     str_detect(action_text,
                "Failed to report favorably") ~ "Failed to report favorably",
     str_detect(action_text,
@@ -854,39 +884,15 @@ committee_actions %>%
                "Forwarded by Subcommittee to Full Committee") ~ "Forwarded to full committee",
     str_detect(action_text,
                "Subcommittee (.+) Discharged\\.$") ~ "Subcommittee discharged",
-    T ~ action_text
+    str_detect(action_text, 
+               "Senator.+filed written report") ~ "Senator filed written report"
     # str_detect(action_text, "Ordered to be reported without amendment favorably") ~ "Ordered to be reported without amendment favorably.",
     
   ))) %>% 
-  count(committee_action_cat, sort = T)
-```
-
-Compare action texts in each category
-
-```{r}
-committee_actions_categorised %>% 
-  add_count(committee_action_cat, name = "cat_n") %>% 
-  count(committee_action_cat, action_text, cat_n) %>%
-  arrange(desc(cat_n), committee_action_cat, desc(n)) %>% 
-  View("Category elements")
-```
-
-```{r}
-committee_actions_categorised %>% 
-  select(bill_id, title, action_date, committee_action_cat, action_text, action_committee_name, action_source_name) %>% 
-  arrange(bill_id, action_date) %>% View()
-```
-
-Check the action texts in each category
-
-```{r}
-committee_actions_categorised %>% 
-  add_count(bill_id) %>% 
-  filter(n > 7) %>% 
-  select(bill_id, title, action_date, committee_action_cat, action_text, action_committee_name, action_source_name) %>% 
-  arrange(bill_id, action_date) %>% 
-  View("Bills with a lot of committee actions")
-  
+  count(action_desc, sort = T)
+  # Check cases which are not matched
+  # filter(is.na(action_desc)) %>% 
+  # count(action_text, sort = T)
 ```
 
 Committee actions which do not have an action code include the following types of actions:
@@ -909,35 +915,53 @@ Committee actions which do not have an action code include the following types o
 
 -   Executive Comment Requested/Received
 
-Combine these committee action categories with action codes
+```{r}
+#| eval: false
+# Compare action texts in each category
+committee_actions_coded %>% 
+  add_count(action_desc, name = "cat_n") %>% 
+  count(action_desc, action_text, cat_n) %>%
+  arrange(desc(cat_n), action_desc, desc(n)) %>% 
+  View("Category elements")
+```
 
 ```{r}
-committee_actions_categorised %>% 
-  mutate(action_code_combined = coalesce(Action, committee_action_cat))
+#| label: view-committee-actions-by-date
+#| eval: false
+committee_actions_coded %>% 
+  select(bill_id, title, action_date, action_desc, action_text, action_committee_name, action_source_name) %>% 
+  arrange(bill_id, action_date) %>% View()
+```
+
+```{r}
+#| label: view-many-committee-actions-by-date
+#| eval: false
+committee_actions_coded %>% 
+  add_count(bill_id) %>% 
+  filter(n > 7) %>% 
+  select(bill_id, title, action_date, action_desc, action_text, action_committee_name, action_source_name) %>% 
+  arrange(bill_id, action_date) %>% 
+  View("Bills with a lot of committee actions")
 ```
 
 # Floor
 
 ```{r }
 #| label: floor-action-codes
-actions_joined %>% 
-  filter(action_type == "Floor") %>% 
-  count(action_source_name, action_code, sort = T)
+(floor_actions = actions_joined %>% 
+  filter(action_type == "Floor")) %>% 
+  count(action_code, Action, sort = T)
 ```
 
-```{r }
-#| label: floor-actions
-actions_joined %>% 
-  filter(action_type == "Floor") %>% 
-  add_count(action_code, name = "action_code_count") %>% 
-  # Select distinct action codes and their descriptions
-  distinct(action_code, action_code_count,
-           Action, action_text_trunc = str_trunc(action_text, width = 60),
-           action_text) %>%
-  # sort by frequency
-  arrange(desc(action_code_count), action_code) %>% 
-  head()# %>% 
-  # View("Floor Action Codes")
+### Missing Action Label
+
+```{r}
+floor_actions %>% 
+  # Filter actions with action codes but no action description
+  filter(!is.na(action_code), is.na(Action)) %>% 
+  select(action_code, bill_id, action_date, action_text, everything()) %>% 
+  arrange(action_code, bill_id) %>% 
+  View("Floor action codes")
 ```
 
 +-------------+----------------------------------------------------------------------------------------------+----------------+
@@ -1054,10 +1078,50 @@ actions_joined %>%
 
 : Floor Action Codes
 
+```{r}
+floor_action_codes = tribble(
+  ~action_code, ~action_desc,
+  "17000", "Passed/agreed to in Senate",
+  "8000", "Passed/agreed to in House",
+  "9000", "Failed of passage/not agreed to in House",
+  "E20000", "Presented to President",
+  "H12700", "Provision of consideration and/or debate",
+  "H1L210", "Rules committee resolution reported to House",
+  "H1L220", "Rule passed House",
+  "H35000", "Previous question ordered",
+  "H30000", "Bill considered",
+  "H30300", "Move to suspend rules and pass the bill/agree to the resolution",
+  "H30800", "Consideration initiated",
+  "H36100", "Move to commit w/instructions to a Select committee",
+  "H36110", "Failed to commit w/instructions",
+  "H36200", "Move to recommit to committee",
+  "H36210", "Failed move to recommit",
+  "H36500", "Move to table the measure",
+  "H36510", "Passed move to table measure",
+  "H37100", "Passage of/agreeing to resolution",
+  "H37220", "Vote demanded at conclusion of debate",
+  "H37300", "Vote on motion to suspend the rules and pass the bill / Passage of bill under suspension of rules",
+  "H38310", "Motion to reconsider laid on the table",
+  "H38400", "Move to reconsider vote",
+  "H38800", "Measure title amended",
+  "H38900", "Clerk authorized to make technical and formatting corrections",
+  "H8A000", "Previous question on the motion was ordered",
+  "H8D000", "Debate"
+)
+```
+
+Even within action code, there appears to be different actions in some cases
+
+```{r}
+floor_ambiguous_action_codes = c("H1B000", "H30000", "H30200", "H36600", "H36610")
+
+
+```
+
 ```{r }
 #| label: floor-missing-codes
-actions_joined %>% 
-  filter(action_type == "Floor", is.na(action_code)) %>% 
+floor_actions %>% 
+  filter(is.na(action_code)) %>% 
   count(action_text, sort = T)# %>% 
   # View("Floor Actions missing codes")
 ```
@@ -1218,24 +1282,41 @@ actions_joined %>%
   # View("Missing Type Action Codes")
 ```
 
++-------------+-----------------------------------------------------------------------------------+----------------+
 | Action Code | Action                                                                            | Given/Inferred |
-|-------------|-----------------------------------------------------------------------------------|----------------|
++=============+===================================================================================+================+
 | `H12410`    | Placed on the Union Calendar                                                      | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
 | `H12420`    | Placed on the House Calendar                                                      | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
 | `H41931`    | Result of motion to reconsider                                                    | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
 | `19500`     | Resolving differences                                                             | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
 | `H41610`    | Result of motion that the House agree to Senate amendment                         | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
 | `H82000`    | Move to table motion to reconsider/postpone consideration/refer                   | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
 | `H12440`    | Motion to place bill on consensus calendar                                        | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
 | `H41400`    | Previous question ordered pursuant to rule/previous House order                   | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
 | `H12430`    | Placed on the Private Calendar                                                    | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
 | `H40110`    | Request unanimous consent that the House to agree to Senate amendment(s)          | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
 | `H40140`    | Move to suspend rules and agree to Senate amendment(s)                            | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
 | `H40150`    | Move that the House agree to Senate amendment(s)                                  | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
 | `80000`     | Amendment failed by the House                                                     | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
 | `H30230`    | An objection was heard to the unanimous consent request to consider the measure.  | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
 | `H40130`    | House moved to agree to the Senate amendment, pursuant to previous special order. | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
 | `H41930`    | Move to reconsider the vote                                                       | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
 
 : Missing Action Type Action Codes
 
