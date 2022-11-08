@@ -178,19 +178,27 @@ count(actions_unnested, action_source_name)
 
 ## Action Type
 
-How often does each type of action occur on a bill?
+`action_type` has the following values, where `n` is the number of actions:
 
 ```{r}
-# add action count for each bill
-add_count(actions_unnested, action_type, name = "actions") %>% 
-  # tally total bills
-  add_tally(wt = n_distinct(bill_id), name = "total_bills") %>% 
-  # Count bills by action count
-  count(action_type, actions, total_bills, 
-        wt = n_distinct(bill_id), name = "bills") %>% 
-  mutate(action_freq = scales::percent(bills/total_bills)) %>% 
-  select(-total_bills)
+count(actions_unnested, action_type)
 ```
+
+How often does each type of action occur on bills?
+
+```{r}
+(action_type_summary = actions_unnested %>% 
+  mutate(total_bills = n_distinct(bill_id)) %>% 
+  group_by(action_type) %>% 
+  # Count actions, bills, and get % of total bills
+  summarise(
+    actions = n(),
+    bills = n_distinct(bill_id),
+    bills_pct = scales::percent(bills/unique(total_bills), accuracy = .1)
+  ))
+```
+
+Bills are always introduced, but only 37% receive any attention in committees.
 
 ## Action Codes
 
@@ -208,12 +216,7 @@ So action codes will need a good bit of cleaning before they're useful. To start
   glimpse(width = 80)
 ```
 
-The action code data has two types of issues here:
-
-1.  Missing action codes
-2.  Missing a code description, but having action codes
-
-How often do these occur?
+How often are action codes and their descriptions present?
 
 ```{r}
 #| label: action-code-stats
@@ -225,10 +228,14 @@ actions_joined %>%
     desc_present = sum(!is.na(Action)),
     code_no_desc = sum(!is.na(action_code)&is.na(Action))
   )
-
 ```
 
-How does action code presence vary by action type?
+The action code data has two types of issues here:
+
+1.  Missing action codes
+2.  Missing a code description, but having action codes
+
+Does action code presence vary by the type of action?
 
 ```{r}
 #| label: action-code-freq-bar
@@ -278,7 +285,7 @@ action_codes_summary_stats %>%
   # scale_fill_manual(name = NULL, values = viz_colours[1:7])+
   # ggpattern::scale_pattern_fill_manual(name = NULL, values = viz_colours[1:7])+
   labs(title = "What actions are coded?",
-       subtitle = "Action code availability, by action type",
+       subtitle = "Action code and description availability, by action type",
        caption = "Striped area indicates code is present but no description",
        # caption = source_caption("govinfo/US GPO"),
        y = NULL, x = "Actions")+
@@ -297,26 +304,17 @@ actions_joined %>%
     coded = sum(!is.na(action_code)),
     not_coded = sum(is.na(action_code)),
     coded_no_desc = sum(!is.na(action_code)&is.na(Action)),
-    actions_coded_pct = scales::percent(coded/n()),
+    coded_pct = scales::percent(coded/n()),
+    coded_desc_pct = scales::percent(1-(coded_no_desc/coded)),
     .groups = "drop"
   )
 ```
 
-So we have a good bit of work to do for Intro/Referral, Committee, and Floor actions. I am going to split the data by action type to break the task up.
-
-So there's a bit of work to do on Committee and Floor actionsto develop comprehensive coding for each type of action (except perhaps `BecameLaw`). To do this, I will look at each action type and do two things:
-
--   Separate actions missing an action code or have an action code but do not have a description
-
-There are a number of cases where actions are duplicated in the data which need to reconcile in order to make sense of the legislative timeline. Are we able to identify duplicate actions using action codes?
-
-How many of the actions are actually coded?
-
-Are action codes tied to the action source systems?
+So there is a good bit of work to do for Intro/Referral, Committee, and Floor actions to develop comprehensive coding for each type of action (except perhaps `BecameLaw`). I am going to split the data by action type to break the task up. In each case, I will need to identify actions missing an action code or have an action code but do not have a description and develop a correct coding for them. There are also a number of cases where actions are duplicated in the data which need to be reconciled in order to make sense of the legislative timeline.
 
 ## Action Source
 
-They're only coming from the Library of Congress. What proportion of the data does each source account for?
+They're only coming from the Library of Congress. What proportion of the data does each source type account for?
 
 ```{r}
 actions_joined %>% 
@@ -324,9 +322,7 @@ actions_joined %>%
   group_by(action_source_name) %>% 
   summarise(
     actions = n(),
-    proportion = scales::percent(n()/unique(n), accuracy = .1),
-    bills = n_distinct(bill_id),
-    # bills_pct = bills/sum(bills)
+    proportion = scales::percent(n()/unique(n), accuracy = .1)
   )
 ```
 
@@ -340,8 +336,8 @@ actions_joined %>%
   group_by(action_source_name, action_type) %>% 
   summarise(
     actions = n(),
-    # actions_pct = scales::percent(n()/unique(source_actions), accuracy = .1),
-    actions_pct = n()/unique(source_actions),
+    actions_pct = scales::percent(n()/unique(source_actions), accuracy = .1),
+    # actions_pct = n()/unique(source_actions),
     bills = n_distinct(bill_id),
     # bills_pct = bills/sum(bills)
   )# %>% 
@@ -362,15 +358,16 @@ actions_joined %>%
 (action_source_by_type = actions_joined %>%
     # Count actions in each source
     add_count(action_source_name, name = "source_actions") %>%
-    group_by(action_source_name, source_actions, action_type) %>%
+    group_by(action_source_name, action_type) %>%
     summarise(
-    bills = n_distinct(bill_id),
-    actions = n(),
-    # actions_pct = scales::percent(n()/unique(source_actions), accuracy = .1),
-    actions_pct = actions/unique(source_actions),
-    .groups = "drop"
-    # bills_pct = bills/sum(bills)
-))
+      bills = n_distinct(bill_id),
+      actions = n(),
+      # actions_pct = scales::percent(n()/unique(source_actions), accuracy = .1),
+      actions_pct = actions/unique(source_actions),
+      .groups = "drop"
+      # bills_pct = bills/sum(bills)
+    )
+)
 ```
 
 ```{r}
@@ -436,19 +433,6 @@ action_source_by_type %>%
 ```
 
 The majority of actions from the **House floor actions** source are Intro/Referrals?
-
-How often are action codes present for each action type?
-
-```{r}
-#| label: action-codes-summary
-actions_joined %>% 
-  group_by(action_type) %>% 
-  summarise(
-    n = n(),
-    n_coded = sum(!is.na(action_code)),
-    pct_coded = scales::percent(n_coded/n, accuracy = .01)
-  )
-```
 
 Committee and Discharge actions are not well coded, but the majority Intro/Referrals and Floor actions are coded.
 
