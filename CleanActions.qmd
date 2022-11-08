@@ -135,9 +135,27 @@ count(actions_unnested, bill_type_cat, bill_id, name = "actions") %>%
   )
 ```
 
-So the vast majority of bills have 5 or fewer actions recorded on them. This will likely change by the time the legislative session is
+So the vast majority of bills have 5 or fewer actions recorded on them. It seems like there are slightly more actions on concurrent resolutions, but this observation may change after cleaning the data.
 
-There are a few different columns we can use to categorise actions:
+To clean the data, and to break up the work, it helps to think about the [different steps of the legislative process](https://www.congress.gov/legislative-process):
+
+-   Introduction and Referral of Bills
+
+-   Committee Consideration
+
+-   Calendars and Scheduling
+
+-   House Floor
+
+-   Senate Floor
+
+-   Executive Business in the Senate
+
+-   Resolving Differences
+
+-   Presidential Actions
+
+There are a few different columns in the data we can use to categorise actions:
 
 -   `action_type`
 
@@ -145,7 +163,7 @@ There are a few different columns we can use to categorise actions:
 
 -   `action_source_name`
 
-As described by Congress' website, the legislative process *generally* maps to `action_type` - Introductions, Committees, Floor actions, etc.. `action_code` is useful for distinguishing between actions of the same type, but as we'll see it is not perfect. `action_source_name` seems to indicate the source of the action data and is useful for understanding how the data is constructed.
+None of these directly segment actions into the steps mentioned above but `action_type` is the most closely aligned, while `action_code` is useful for distinguishing actions of the same type but as we'll see it is not perfect. `action_source_name` seems to indicate the source of the action data and is useful for understanding how the data is constructed.
 
 Below are the counts of each variable.
 
