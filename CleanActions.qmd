@@ -460,9 +460,12 @@ What data is missing for intro actions?
 
 ```{r}
 intro_actions %>% 
+  # Count missing obs for each variable
   summarise(across(everything(), ~sum(is.na(.))),
             n = n()) %>% 
+  # Pivot all except n
   pivot_longer(-n, names_to = "column", values_to = "n_missing") %>% 
+  # Calc % missing
   mutate(pct_missing = n_missing/n) %>% 
   arrange(desc(pct_missing))
 ```
@@ -477,6 +480,7 @@ intro_actions %>%
   group_by(bill_type_cat) %>%
   # Count actions, actions w/code, and coded proportion
   summarise(
+    bills = n_distinct(bill_id),
     actions = n(),
     actions_coded = sum(!is.na(Action)),
     actions_coded_pct = scales::percent(actions_coded/actions),
@@ -491,6 +495,7 @@ intro_actions %>%
   # Count actions by action source
   group_by(action_source_name) %>%
   summarise(
+    bills = n_distinct(bill_id),
     actions = n(),
     actions_coded = sum(!is.na(Action)),
     actions_coded_pct = scales::percent(actions_coded/actions),
@@ -498,13 +503,6 @@ intro_actions %>%
   )
 ```
 :::
-
-Which source are Intro/Referral actions coming from?
-
-```{r}
-intro_actions %>% 
-  count(action_source_name, sort = T)
-```
 
 ## Action Codes
 
