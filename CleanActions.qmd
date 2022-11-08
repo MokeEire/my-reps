@@ -551,6 +551,17 @@ Below is a table of the action codes and their meaning
 | `Intro-H`   | Introduced in House                                      |            |
 +-------------+----------------------------------------------------------+------------+
 
+```{r}
+intro_action_codes = tribble(
+  ~action_code, ~action_desc,
+  "1000", "Introduced in House",
+  "10000", "Introduced in Senate",
+  "B00100", "Sponsor introductory remarks on measure",
+  "H11100", "Referred to Committee",
+  "H11210", "Committee granted an extension for further consideration"
+)
+```
+
 #### Duplicates
 
 The `action_code`s **1000** and **Intro-H** seem to be duplicates. Let's look at them.
@@ -565,15 +576,15 @@ actions_to_compare = c("1000", "Intro-H")
   glimpse(width = 80)
 ```
 
-Do bills typically have both of these actions?
+How many of these two identical actions do bills have?
 
 ```{r}
 compare_intro_actions %>% 
   count(bill_id, wt = n_distinct(action_code), name = "code_count") %>% 
-  count(code_count)
+  count(code_count, name = "bills")
 ```
 
-Does one of the actions occur on every bill?
+How many bills does each code occur on?
 
 ```{r}
 compare_intro_actions %>% 
@@ -581,19 +592,7 @@ compare_intro_actions %>%
   count(action_code, wt = n_distinct(bill_id))
 ```
 
-How many bills have both actions? And how many bills does each action occur on?
-
-```{r}
-compare_intro_actions %>% 
-  # Count actions on each bill
-  add_count(bill_id, name = "actions") %>% 
-  # Count bills with X actions
-  count(actions, wt = n_distinct(bill_id), name = "bills")
-
-# Count bills with action code Y
-compare_intro_actions %>% 
-  count(action_code, wt = n_distinct(bill_id), name = "bills")
-```
+Does one code occur in every case?
 
 ```{r}
 compare_intro_actions %>% 
@@ -609,7 +608,11 @@ compare_intro_actions %>%
   count(actions_present, wt = n_distinct(bill_id), sort = T)
 ```
 
-When bills have more than one action, is all the information identical other than the action code?
+Yep, either `1000` is present or both are.
+
+When bills have more than one action, is all the information identical other than the action code? We'll check this by getting the different distinct combinations of variables excluding action code (and its related description we joined earlier).
+
+If we get the same number of rows as there are bills, the information is identical.
 
 ```{r}
 compare_intro_actions %>% 
@@ -620,68 +623,79 @@ compare_intro_actions %>%
   arrange(bill_id, action_code) %>% #glimpse(width = 80)
   # Remove columns which are different
   select(-action_code, -Action) %>% 
-  distinct_all()
+  distinct_all() %>% 
+  tally()
 ```
 
-Yep
-
-Do all bills with IntroH action codes also have code 1000?
-
-```{r}
-introh_bills = compare_intro_actions %>% 
-  filter(action_code == "Intro-H") %>% 
-  distinct(bill_id) 
-
-# Return intro-H bills which DO NOT have a match
-anti_join(introh_bills,
-          compare_intro_actions, by = "bill_id")
-
-```
-
-Yep, so we can remove `Intro-H` actions without losing any information. This reduces the size of the actions data by \~8,000 rows.
+So we can remove `Intro-H` actions without losing any information. This reduces the size of the actions data by \~8,000 rows.
 
 ```{r}
 #| label: intro-code-dedupe
 
-(actions_intro_dedupe = actions_joined %>% 
+(intro_actions_dedupe = intro_actions %>% 
   # Remove Intro-H action codes (keep NAs)
   filter(replace_na(action_code != "Intro-H", T)) %>% 
   arrange(bill_id, action_date, action_time)) %>% 
   glimpse(width = 80)
 ```
 
-#### Missing Action Label
+#### Incomplete Action Coding
 
-What about actions without action codes or action labels?
+Of the de-duplicated Intro/Referral actions, how many have action codes and descriptions?
 
 ```{r}
-intro_actions %>% 
-  # Remove Intro-H action codes (keep NAs)
-  filter(replace_na(action_code != "Intro-H", T)) %>% 
-  # Filter actions with action codes but no action description
-  filter(!is.na(action_code), is.na(Action)) %>% 
-  select(action_code, action_text, bill_id, action_date, everything()) %>% 
-  arrange(action_code, bill_id)
+intro_actions_dedupe %>% 
+  left_join(intro_action_codes, by = "action_code") %>% 
+  summarise(
+    n = n(),
+    across(c(action_code, Action, action_desc), ~sum(!is.na(.)))
+  )
+```
+
+Let's use the action text field to categorize them.
+
+```{r}
+intro_actions_dedupe %>% 
+  left_join(intro_action_codes, by = "action_code") %>% 
+  filter(is.na(action_code)|is.na(action_desc)) %>% 
+  count(action_text, sort = T)
+```
+
+These seem to be senate committee referral actions, can we verify with the source name?
+
+```{r}
+intro_actions_dedupe %>% 
+  left_join(intro_action_codes, by = "action_code") %>% 
+  filter(is.na(action_code)|is.na(action_desc)) %>% 
+  count(action_source_name, sort = T)
 ```
 
 ```{r}
-(intro_actions_uncoded = intro_actions %>% 
-  # Remove Intro-H action codes (keep NAs)
-  filter(replace_na(action_code != "Intro-H", T),
-         is.na(Action)))
+intro_actions_dedupe %>% 
+  # Join action codes
+  left_join(intro_action_codes, by = "action_code") %>% 
+  # Keep cases without any action codes
+  filter(is.na(action_code)|is.na(action_desc)) %>%
+  # Assign actions to category based on their text
+  mutate(action_desc = case_when(
+    str_detect(action_text, "[Rr]eferred to the (Select\\s)?Committee") ~ "Referred to Committee",
+    str_detect(action_text, "Received in the Senate") ~ "Received in the Senate"
+  )) %>% 
+  count(action_desc, sort = T)
 ```
 
-Are they all from a particular source e.g. Senate? Yep.
-
 ```{r}
-intro_actions_uncoded %>% 
-  count(action_source_name)
-```
-
-```{r}
-intro_actions_uncoded %>% 
-  count(action_code, action_text) %>% 
-  View("intro action texts")
+(intro_actions_dedupe_coded = intro_actions_dedupe %>%
+  # Join action codes
+  left_join(intro_action_codes, by = "action_code") %>% 
+  # Assign actions to category based on their text when missing action code
+  mutate(action_desc = case_when(
+    !is.na(action_desc) ~ action_desc,
+    str_detect(action_text, "[Rr]eferred to the (Select\\s)?Committee") ~ "Referred to Committee",
+    str_detect(action_text, "Received in the Senate") ~ "Received in the Senate"
+  ))) %>% 
+  count(action_code, action_desc)
+  
 ```
 
 These can be grouped into the following:
@@ -699,6 +713,7 @@ These can be grouped into the following:
 -   Referred to committee
 
 ```{r}
+#| eval: false
 (actions_intro_coded = actions_intro_dedupe %>% 
     # Create action category variable
   mutate(action_cat = case_when(
