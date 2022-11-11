@@ -212,8 +212,7 @@ format_date_api = function(date){
 #'
 #' @examples
 parse_committee = function(committee){
-  committee_tibbled = committee %>% 
-    map_at("activities", map_dfr, ~flatten_dfc_rename(.x, "committee_activity")) %>% 
+  committee_tibbled = map_at(committee, "activities", map_dfr, ~flatten_dfc_rename(.x, "committee_activity")) %>% 
     map_at("subcommittees", function(subcommittee){
       map_dfr(subcommittee, parse_subcommittee)
     })
@@ -376,8 +375,7 @@ parse_vote_roll = function(vote, chamber, logger, bill_type, bill_num){
 #'
 #' @examples
 parse_action = function(action){
-  action %>% 
-    map_at("sourceSystem", ~flatten_dfc_rename(.x, "source")) %>% 
+  map_at(action, "sourceSystem", ~flatten_dfc_rename(.x, "source")) %>% 
     map_at("committees", function(committee){
       map_dfr(committee, ~flatten_dfc_rename(.x, "committee"))
     }) %>% 
@@ -385,8 +383,7 @@ parse_action = function(action){
 }
 
 parse_amendment = function(amendment){
-  amendment %>% 
-    map_at("actions", function(actions){
+  map_at(amendment, "actions", function(actions){
       actions %>% 
         modify_at("actions", map_dfr, parse_action) %>% 
         modify_at("actionTypeCounts", flatten_dfc) %>% 
@@ -395,8 +392,7 @@ parse_amendment = function(amendment){
 }
 
 parse_sponsor = function(sponsor, role = "sponsor"){
-  sponsor %>% 
-    map_at("identifiers", ~flatten_dfc_rename(.x, "identifiers")) %>% 
+  map_at(sponsor, "identifiers", ~flatten_dfc_rename(.x, "identifiers")) %>% 
     flatten_dfc_rename(name_prefix = role)
 }
 
@@ -498,26 +494,25 @@ extract_bill_status = function(xml_file,
 
   # Extract non-singular base attributes ----
   ## Policy area
-  policy_areas = as_list(xml_find_all(bill_xml, "policyArea/name")) %>% 
-    map_chr(flatten_chr)
+  policy_areas = map_chr(as_list(xml_find_all(bill_xml, "policyArea/name")),
+                         flatten_chr)
   ## Subjects
-  bill_subjects = as_list(xml_find_all(bill_xml, "subjects/billSubjects/legislativeSubjects/item/name")) %>% 
-    map_chr(flatten_chr)
+  bill_subjects = map_chr(as_list(xml_find_all(bill_xml, "subjects/billSubjects/legislativeSubjects/item/name")),
+                          flatten_chr)
   ## Summaries
-  bill_summaries = as_list(xml_find_all(bill_xml, "summaries/billSummaries/item")) %>% 
-    map_dfr(flatten_dfc)
+  bill_summaries = map_dfr(as_list(xml_find_all(bill_xml, "summaries/billSummaries/item")), flatten_dfc)
   ## Titles
-  bill_titles = as_list(xml_find_all(bill_xml, "titles/item")) %>% 
-    map_dfr(flatten_dfc)
+  bill_titles = map_dfr(as_list(xml_find_all(bill_xml, "titles/item")),
+                        flatten_dfc)
   ## Text versions
-  bill_text_versions = as_list(xml_find_all(bill_xml, "textVersions/item")) %>% 
-    map(map_at, "formats", map_dfr, flatten_dfc) %>% 
+  bill_text_versions = map(as_list(xml_find_all(bill_xml, "textVersions/item")),
+                           map_at, "formats", map_dfr, flatten_dfc) %>% 
     map_dfr(flatten_dfc)
   #TODO: Parse bill text version format data
   
   ## Latest action
-  latest_action = as_list(xml_find_all(bill_xml, "latestAction")) %>% 
-    map(flatten_dfc) %>% 
+  latest_action = map(as_list(xml_find_all(bill_xml, "latestAction")),
+                      flatten_dfc) %>% 
     map_dfr(~rename_with(.x, ~str_c("latestAction_", .)))
   
   # bill_df = bill_df %>% 
@@ -554,8 +549,7 @@ extract_bill_status = function(xml_file,
     # Coerce nodes to list
     committees_list = as_list(committees)
     
-    committees_df = map_dfr(committees_list, parse_committee) %>% 
-      janitor::clean_names()
+    committees_df = janitor::clean_names( map_dfr(committees_list, parse_committee) )
     
     bill_df$committees = list(committees_df)
     
@@ -577,12 +571,11 @@ extract_bill_status = function(xml_file,
     # Coerce nodes to list
     votes_list = as_list(votes_node)
 
-    votes_df = map_dfr(votes_list, flatten_dfc) %>% 
-      select(-any_of(c("congress")))
+    votes_df = select(map_dfr(votes_list, flatten_dfc), -any_of(c("congress")))
 
     # Add Vote tallies
-    vote_rolls_df = votes_df %>% 
-      mutate(vote_roll = map2(url, chamber, parse_vote_roll, 
+    vote_rolls_df = mutate(votes_df,
+                           vote_roll = map2(url, chamber, parse_vote_roll, 
                              logger = logger, 
                              bill_type = bill_df$billType,
                              bill_num = bill_df$billNumber),
