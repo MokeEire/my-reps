@@ -475,12 +475,13 @@ extract_bill_status = function(xml_file,
                                get_votes = T,
                                col_specs = attribute_col_types,
                                log_threshold = "INFO",
-                               log_types = c("file", "console")){
+                               log_types = c("console")){
   # Create logger
   logger = create_logger(log_threshold = log_threshold, 
                          log_types = log_types)
   
-  bill_xml = xml_child(read_xml(xml_file), "bill")
+  xml_raw = read_xml(xml_file)
+  bill_xml = xml_child(xml_raw, "bill")
   
   # singletons = xml_singular_nodes(bill_xml)
   singletons = xml_find_all(bill_xml, "//bill/*[count(./*) = 0 and not(string-length(.) = 0)]")
