@@ -74,7 +74,7 @@ glimpse(actions_unnested, width = 80)
 
 Possible action information includes:
 
--   the date of the action, in some cases the time
+-   the date/time of the action
 
 -   the source system which records the action
 
@@ -84,7 +84,7 @@ Possible action information includes:
 
 -   the committee related to the action
 
-The data contains `r scales::comma(nrow(actions_unnested))` actions from `r scales::comma(n_distinct(actions_unnested$bill_id))` bills.
+The data contains `r scales::comma(nrow(actions_unnested))` actions from `r scales::comma(n_distinct(actions_unnested$bill_id))` bills. How are actions distributed across bills?
 
 ```{r}
 # Count actions by chamber and bill
@@ -118,6 +118,8 @@ count(actions_unnested, bill_id, name = "actions") %>%
   summary()
 ```
 
+Does the distribution vary by bill type?
+
 ```{r}
 # Count actions for each bill
 count(actions_unnested, bill_type_cat, bill_id, name = "actions") %>% 
@@ -135,7 +137,7 @@ count(actions_unnested, bill_type_cat, bill_id, name = "actions") %>%
   )
 ```
 
-So the vast majority of bills have 5 or fewer actions recorded on them. It seems like there are slightly more actions on concurrent resolutions, but this observation may change after cleaning the data.
+The vast majority of bills have 5 or fewer actions recorded on them. It seems like there are slightly more actions on concurrent resolutions on average, but this observation may change after cleaning the data.
 
 To clean the data, and to break up the work, it helps to think about the [different steps of the legislative process](https://www.congress.gov/legislative-process):
 
@@ -155,26 +157,7 @@ To clean the data, and to break up the work, it helps to think about the [differ
 
 -   Presidential Actions
 
-There are a few different columns in the data we can use to categorise actions:
-
--   `action_type`
-
--   `action_code`
-
--   `action_source_name`
-
-None of these directly segment actions into the steps mentioned above but `action_type` is the most closely aligned, while `action_code` is useful for distinguishing actions of the same type but as we'll see it is not perfect. `action_source_name` seems to indicate the source of the action data and is useful for understanding how the data is constructed.
-
-Below are the counts of each variable.
-
-```{r}
-#| layout-nrow: 1
-count(actions_unnested, action_type)
-
-count(actions_unnested, action_code)
-
-count(actions_unnested, action_source_name)
-```
+`action_type` is the most closely aligned with these steps, while `action_code` is a more fine-grain category but is more often missing. `action_source_name` indicates the source of the action data and is useful for understanding how the data is constructed.
 
 ## Action Type
 
@@ -184,7 +167,7 @@ count(actions_unnested, action_source_name)
 count(actions_unnested, action_type)
 ```
 
-How often does each type of action occur on bills?
+How often do actions of each type occur on bills?
 
 ```{r}
 (action_type_summary = actions_unnested %>% 
@@ -198,7 +181,7 @@ How often does each type of action occur on bills?
   ))
 ```
 
-Bills are always introduced, but only 37% receive any attention in committees.
+Bills were always introduced, but only 37% received any attention in committees, 10% went to the floor, and 1.3% became law.
 
 ## Action Codes
 
@@ -212,7 +195,7 @@ So action codes will need a good bit of cleaning before they're useful. To start
 #| label:  action-codes
 (actions_joined = actions_unnested %>% 
     # Join actions to the list of action codes
-  left_join(action_codes, by = c("action_code" = "Code"))) %>% 
+  left_join(action_codes, by = "action_code")) %>% 
   glimpse(width = 80)
 ```
 
@@ -225,17 +208,17 @@ actions_joined %>%
   summarise(
     actions = n(),
     code_present = sum(!is.na(action_code)),
-    desc_present = sum(!is.na(Action)),
-    code_no_desc = sum(!is.na(action_code)&is.na(Action))
+    desc_present = sum(!is.na(action_desc)),
+    code_no_desc = sum(!is.na(action_code)&is.na(action_desc))
   )
 ```
 
 The action code data has two types of issues here:
 
-1.  Missing action codes
-2.  Missing a code description, but having action codes
+1.  Missing action code description
+2.  Missing action code altogether
 
-Does action code presence vary by the type of action?
+How do these issues differ by action type?
 
 ```{r}
 #| label: action-code-freq-bar
@@ -251,9 +234,9 @@ action_codes_summary_stats = actions_joined %>%
     actions = n(),
     code_present = sum(!is.na(action_code)),
     code_present_pct = code_present/actions,
-    desc_present = sum(!is.na(Action)),
+    desc_present = sum(!is.na(action_desc)),
     desc_present_pct = desc_present/actions,
-    code_no_desc = sum(!is.na(action_code)&is.na(Action)),
+    code_no_desc = sum(!is.na(action_code)&is.na(action_desc)),
     code_no_desc_pct = code_no_desc/actions,
     .groups = "drop"
   )
@@ -301,20 +284,26 @@ actions_joined %>%
   group_by(action_type) %>%
   # Count actions, actions w/code, and coded proportion
   summarise(
+    n = n(),
     coded = sum(!is.na(action_code)),
-    not_coded = sum(is.na(action_code)),
-    coded_no_desc = sum(!is.na(action_code)&is.na(Action)),
+    # not_coded = sum(is.na(action_code)),
+    coded_desc = sum(!is.na(action_code)&!is.na(action_desc)),
     coded_pct = scales::percent(coded/n()),
-    coded_desc_pct = scales::percent(1-(coded_no_desc/coded)),
+    coded_desc_pct = scales::percent(coded_desc/coded),
     .groups = "drop"
   )
 ```
 
-So there is a good bit of work to do for Intro/Referral, Committee, and Floor actions to develop comprehensive coding for each type of action (except perhaps `BecameLaw`). I am going to split the data by action type to break the task up. In each case, I will need to identify actions missing an action code or have an action code but do not have a description and develop a correct coding for them. There are also a number of cases where actions are duplicated in the data which need to be reconciled in order to make sense of the legislative timeline.
+So there is a good bit of work to do for Intro/Referral, Committee, and Floor actions to develop comprehensive coding for each type of action (except perhaps `BecameLaw`). I am going to split the data by action type to break the task up. In each case, I will need to identify actions missing an action code or have an action code but do not have a description and develop a correct coding for them.
+
+There are also a number of cases where actions are duplicated in the data which need to be reconciled in order to make sense of the legislative timeline. Below are a list of the potential duplicates I have found:
+
+-   Action code `E30000` and `36000` with action type `President` and `BecameLaw` respectively appear to both represent the president signing a bill into law, while action codes `E40000` and `36000` with the same respective action types represent a bill becoming a public law. In this case, action type `President` and `BecameLaw` are interchangeable
+-   Action code `Intro-H` appears to be a duplicate of action code `1000`, both of which are `IntroReferral` action types
 
 ## Action Source
 
-They're only coming from the Library of Congress. What proportion of the data does each source type account for?
+What proportion of the data does each source type account for?
 
 ```{r}
 actions_joined %>% 
@@ -328,118 +317,29 @@ actions_joined %>%
 
 Library of Congress accounts for a little under half of the data while the House floor actions source accounts for a little less than a third of actions data.
 
-What action types are contained in each source system?
-
-```{r}
-actions_joined %>% 
-  add_count(action_source_name, name = "source_actions") %>%
-  group_by(action_source_name, action_type) %>% 
-  summarise(
-    actions = n(),
-    actions_pct = scales::percent(n()/unique(source_actions), accuracy = .1),
-    # actions_pct = n()/unique(source_actions),
-    bills = n_distinct(bill_id),
-    # bills_pct = bills/sum(bills)
-  )# %>% 
-  # pivot_wider(id_cols = action_source_name, 
-  #             names_from = action_type, 
-  #             values_from = c(actions, actions_pct, bills), 
-  #             names_glue = "{action_type}_{.value}",
-  #             values_fill = 0) %>% 
-  # select(action_source_name, 
-  #        starts_with("IntroReferral"), starts_with("Committee"), 
-  #        starts_with("Floor"), starts_with("Discharge"), 
-  #        starts_with("President"), starts_with("BecameLaw"), starts_with("NA"))
-
-```
+Which types of actions are in each action source?
 
 ```{r}
 #| label: source-by-type
-(action_source_by_type = actions_joined %>%
+action_source_by_type = actions_joined %>%
     # Count actions in each source
     add_count(action_source_name, name = "source_actions") %>%
     group_by(action_source_name, action_type) %>%
     summarise(
       bills = n_distinct(bill_id),
       actions = n(),
-      # actions_pct = scales::percent(n()/unique(source_actions), accuracy = .1),
-      actions_pct = actions/unique(source_actions),
+      actions_pct = scales::percent(n()/unique(source_actions), accuracy = .1),
+      # actions_pct = actions/unique(source_actions),
       .groups = "drop"
       # bills_pct = bills/sum(bills)
     )
-)
-```
 
-```{r}
-action_source_by_type %>%
-  pivot_wider(id_cols = action_source_name,
-              names_from = action_type,
-              values_from = c(bills, actions, actions_pct),
-              names_glue = "{action_type}_{.value}",
-              values_fn = list(actions_pct = scales::percent),
-              values_fill = list(bills = 0, actions = 0, actions_pct = "0%")) %>%
-  select(action_source_name,
-         starts_with("IntroReferral"), starts_with("Committee"),
-          starts_with("Floor"), starts_with("Discharge"),
-          starts_with("President"), starts_with("BecameLaw"), starts_with("NA")) %>%
-  # colnames()
-  reactable(theme = moke_rt(),
-            columns = list(
-              "IntroReferral_actions" = colDef(name = "Actions", width = 80),
-              "IntroReferral_actions_pct" = colDef(name = "%"),
-              "IntroReferral_bills" = colDef(name = "Bills"),
-              "Committee_actions" = colDef(name = "Actions"),
-              "Committee_actions_pct" = colDef(name = "%"),
-              "Committee_bills" = colDef(name = "Bills"),
-              "Floor_actions" = colDef(name = "Actions"),
-              "Floor_actions_pct" = colDef(name = "%"),
-              "Floor_bills" = colDef(name = "Bills"),
-              "Discharge_actions" = colDef(name = "Actions"),
-              "Discharge_actions_pct" = colDef(name = "%"),
-              "Discharge_bills" = colDef(name = "Bills"),
-              "President_actions" = colDef(name = "Actions"),
-              "President_actions_pct" = colDef(name = "%"),
-              "President_bills" = colDef(name = "Bills"),
-              "BecameLaw_actions" = colDef(name = "Actions"),
-              "BecameLaw_actions_pct" = colDef(name = "%"),
-              "BecameLaw_bills" = colDef(name = "Bills"),
-              "NA_actions" = colDef(name = "Actions"),
-              "NA_actions_pct" = colDef(name = "%"),
-              "NA_bills" = colDef(name = "Bills")
-            ),
-            columnGroups = list(
-              colGroup(name = "Intro/Referral",
-                       columns = c("IntroReferral_actions",
-                                  "IntroReferral_actions_pct",
-                                  "IntroReferral_bills")),
-              colGroup(name = "Committee",
-                        columns = c("Committee_actions", "Committee_actions_pct",
-                        "Committee_bills")),
-              colGroup(name = "Floor",
-                        columns = c("Floor_actions", "Floor_actions_pct",
-                        "Floor_bills")),
-              colGroup(name = "Discharge",
-                        columns = c("Discharge_actions", "Discharge_actions_pct",
-                        "Discharge_bills")),
-              colGroup(name = "President",
-                        columns = c("President_actions", "President_actions_pct",
-                        "President_bills")),
-              colGroup(name = "Became Law",
-                        columns = c("BecameLaw_actions", "BecameLaw_actions_pct",
-                        "BecameLaw_bills")),
-              colGroup(name = "Missing",
-                       columns = c("NA_actions", "NA_actions_pct", "NA_bills"))
-))
+action_source_by_type %>% 
+  tidyr::complete(action_source_name, action_type)
+
 ```
 
 The majority of actions from the **House floor actions** source are Intro/Referrals?
-
-Committee and Discharge actions are not well coded, but the majority Intro/Referrals and Floor actions are coded.
-
-Below are a list of the cases I have found:
-
--   Action code `E30000` and `36000` with action type `President` and `BecameLaw` respectively appear to both represent the president signing a bill into law, while action codes `E40000` and `36000` with the same respective action types represent a bill becoming a public law. In this case, action type `President` and `BecameLaw` are interchangeable
--   Action code `Intro-H` appears to be a duplicate of action code `1000`, both of which are `IntroReferral` action types
 
 # Intro/Referral
 
