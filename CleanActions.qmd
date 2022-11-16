@@ -28,11 +28,11 @@ source("R/parsing_functions.R")
 action_codes = read_csv(here("data", "action_codes.csv"), col_types = "cc")
 
 # Load cleaned R objects
-all_bills = readRDS(here("data", "cleaned", "BILLSTATUS_117.Rds"))
+all_bills = readRDS(here("data", "cleaned", "BILLSTATUS_117_2022-11-10.Rds"))
 # actions = readRDS(here("data", "cleaned", "BILLSTATUS_117_Actions.Rds"))
 ```
 
-Using the `clean_data.R` script, I parsed govinfo's house and senate bill data from the current (117th) congress. This document looks at the actions on these bills and outlines the steps required to clean the actions data. This includes:
+Using the `collect_data.R` script, I parsed govinfo's house and senate bill data from the current (117th) congress. This document unpacks the actions nested in the data and cleans the actions data in the following ways:
 
 -   Making sure fields are the right data type
 
