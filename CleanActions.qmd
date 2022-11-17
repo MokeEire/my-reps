@@ -539,16 +539,30 @@ Join intro actions to our action codes and fill in missing descriptions using th
 
 ## Duplicates
 
+Use `janitor::get_dupes()` with all variables except code-related variables and source system variables to identify duplicate actions.
+
+```{r}
+(intro_dupes = get_dupes(intro_actions_coded,
+                         action_text, bill_id, action_date, action_time,
+                         action_committee_system_code,
+                         action_committee_name))
+```
+
+```{r}
+intro_dupes %>% 
+  count(action_code, wt = dupe_count, sort = T)
+```
+
 The `action_code`s **1000** and **Intro-H** seem to be duplicates. Let's look at them.
 
 ::: callout-note
 ## Assumption
 
-A bill being received in the Senate is different than being introduced in the Senate. \
+A bill being received in the Senate is different than being introduced in the Senate.\
 If this is incorrect, we'll need to deduplicate those too.
 :::
 
-```{r }
+```{r}
 #| label: compare-intro
 actions_to_compare = c("1000", "Intro-H")
 
@@ -780,8 +794,12 @@ Committee actions which do not have an action code include the following types o
 Before we categorize the actions without an action code, join the action descriptions we outlined above.
 
 ```{r}
-(committee_actions_coded = committee_actions %>% 
-  left_join(committee_action_codes, by = "action_code") %>% 
+committee_actions_joined = committee_actions %>% 
+  left_join(committee_action_codes, by = "action_code")
+```
+
+```{r}
+(committee_actions_coded = committee_actions_joined %>% 
   mutate(action_code_desc = case_when(
     !is.na(action_code_desc) ~ action_code_desc,
     str_detect(action_text, 
@@ -839,7 +857,7 @@ Before we categorize the actions without an action code, join the action descrip
   # count(action_text, sort = T)
 ```
 
-The iterative process that helped me come up with these categories looked something like this:
+The iterative process that I used to come up with these categories looked something like this:
 
 ```{r}
 #| eval: false
@@ -872,35 +890,6 @@ committee_actions %>%
   select(action_text, everything()) %>% View("Missing code desc")
 ```
 
-```{r}
-#| eval: false
-# Compare action texts in each category
-committee_actions_coded %>% 
-  add_count(action_desc, name = "cat_n") %>% 
-  count(action_desc, action_text, cat_n) %>%
-  arrange(desc(cat_n), action_desc, desc(n)) %>% 
-  View("Category elements")
-```
-
-```{r}
-#| label: view-committee-actions-by-date
-#| eval: false
-committee_actions_coded %>% 
-  select(bill_id, title, action_date, action_desc, action_text, action_committee_name, action_source_name) %>% 
-  arrange(bill_id, action_date) %>% View()
-```
-
-```{r}
-#| label: view-many-committee-actions-by-date
-#| eval: false
-committee_actions_coded %>% 
-  add_count(bill_id) %>% 
-  filter(n > 7) %>% 
-  select(bill_id, title, action_date, action_desc, action_text, action_committee_name, action_source_name) %>% 
-  arrange(bill_id, action_date) %>% 
-  View("Bills with a lot of committee actions")
-```
-
 View data for the bill with the most committee actions
 
 ```{r}
@@ -915,11 +904,17 @@ committee_actions_coded %>%
 Use `janitor::get_dupes()` with all variables except code-related variables and source system variables
 
 ```{r}
-(committee_dupes = janitor::get_dupes(committee_actions_coded,
-                                      action_text, bill_id:action_date, action_time,
-                                      action_committee_system_code,
-                                      action_committee_name))
+(committee_dupes = get_dupes(committee_actions,
+                         action_text, bill_id,action_date, action_time,
+                         action_committee_system_code,
+                         action_committee_name))
 ```
+
+We can see the following:
+
+-   Code `14000` is the generic code for a bill being reported to the Senate coming from the Library of Congress, while the same actions coming from the Senate have a more descriptive code description inferred from the action text above
+
+-   Code `5000` is a similarly generic code from the Library of Congress for a bill being reported to the House. In this case however, we have the more specific actions `H12100`, `H12200`, and `H12210` which come from the House floor actions source
 
 ```{r}
 committee_dupes %>% 
@@ -935,19 +930,14 @@ committee_dupes %>%
   summarise(sum(n))
 ```
 
-```{r}
-committee_actions_coded %>% 
-  filter(action_code %in% c("H12200", "H12100", "H12210", "5000"))
-```
-
 Look at bills with `H12210` actions, check if there is always a corresponding `5000` action with the same action text.
 
 ```{r}
 committee_actions %>% 
   group_by(bill_id) %>% 
   filter("H12210" %in% action_code) %>% 
-  select(action_text, action_code, everything()) %>% 
-  View("H12210 bills")
+  select(action_text, action_code, everything())# %>% 
+  # View("H12210 bills")
 ```
 
 There is indeed.
@@ -958,8 +948,8 @@ Now check `H12200` actions.
 committee_actions %>% 
   group_by(bill_id) %>% 
   filter("H12200" %in% action_code) %>% 
-  select(action_text, action_code, everything()) %>% 
-  View("H12200 bills")
+  select(action_text, action_code, everything())# %>% 
+  # View("H12200 bills")
 ```
 
 And lastly, I think it's also worth checking `H12100` actions since it seems likely the library of congress is recording each of these actions.
@@ -968,27 +958,33 @@ And lastly, I think it's also worth checking `H12100` actions since it seems lik
 committee_actions %>% 
   group_by(bill_id) %>% 
   filter("H12100" %in% action_code) %>% 
-  select(action_text, action_code, everything()) %>% 
-  View("H12100 bills")
+  select(action_text, action_code, everything())# %>% 
+  # View("H12100 bills")
 ```
 
-Yep we also have duplicates of this action. So `H12100`, `H12200`, and `H12210` are all duplicates of `5000`. Let's keep the `H12-` action codes because they delineate the different actions.
+Yep we also have duplicates of this action. So `H12100`, `H12200`, and `H12210` are all duplicates of `5000`. Let's keep the `H12-` action codes because they more clearly distinguish the actions.
 
-What about the Original measure reported to Senate action without an action code that appears to be a duplicate of code `14000`
+What about the Reported to Senate actions without an action code that appears to be a duplicate of code `14000`
 
 ```{r}
 committee_actions_coded %>% 
-  filter(action_code_desc == "Original measure reported to Senate")
+  group_by(bill_id) %>% 
+  filter("14000" %in% action_code) %>% 
+  ungroup() %>% 
+  mutate(filter_cond = replace_na(!(action_code %in% c("5000", "14000")), T)) %>% 
+  select(action_text, action_code, filter_cond, everything()) %>% 
+  View("14000 actions")
 ```
 
-So we can remove `5000` actions without losing any information or bills. This reduces the size of the actions data by thousands of rows.
+So we can remove `5000` and `14000` actions without losing any information or bills. This reduces the size of the actions data by thousands of rows.
 
 ```{r}
 #| label: committee-code-dedupe
 (committee_actions_dedupe = committee_actions_coded %>% 
-  # Remove Intro-H action codes (keep NAs)
-  filter(replace_na(!(action_code == "5000"), T),
-         action_code_desc != "Original measure reported to Senate") %>% 
+  # Remove 5000 and 14000 action codes (keep NAs)
+  filter(replace_na(!(action_code %in% c("5000", "14000")), T)) %>% 
+  # filter(replace_na(!(action_code == "5000"), T),
+  #        action_code_desc != "Original measure reported to Senate") %>% 
   arrange(bill_id, action_date, action_time)) %>% 
   glimpse(width = 80)
 ```
@@ -1000,6 +996,13 @@ So we can remove `5000` actions without losing any information or bills. This re
 (floor_actions = actions_joined %>% 
   filter(action_type == "Floor")) %>% 
   glimpse(80)
+```
+
+Where are floor data coming from?
+
+```{r}
+floor_actions %>% 
+  count(action_source_name, sort = T)
 ```
 
 What data is missing for floor actions?
@@ -1034,130 +1037,134 @@ How many actions are coded but missing descriptions?
 nrow(floor_actions[!is.na(floor_actions$action_code)&is.na(floor_actions$action_desc),])
 ```
 
+That is a lot of action codes with not a lot of descriptions.
+
 ## Missing Action Description
 
 ```{r}
 floor_actions %>% 
   # Filter actions with action codes but no action description
   filter(!is.na(action_code), is.na(action_desc)) %>% 
-  select(action_code, action_text, bill_id, action_date, everything()) %>% 
-  arrange(action_code, bill_id) %>% 
-  group_split(action_code) %>% 
-  map(count, action_code, action_text, sort = T)
-  View("Floor action codes")
+  count(action_code, action_text) %>% 
+  arrange(action_code, desc(n))# %>% 
+  # View("Floor Action Codes")
 ```
 
-+-------------+----------------------------------------------------------------------------------------------+----------------+
-| Action Code | Action                                                                                       | Given/Inferred |
-+=============+==============================================================================================+================+
-| `17000`     | Passed/agreed to in Senate                                                                   | Given          |
-+-------------+----------------------------------------------------------------------------------------------+----------------+
-| `8000`      | Passed/agreed to in House                                                                    | Given          |
-+-------------+----------------------------------------------------------------------------------------------+----------------+
-| `9000`      | Failed of passage/not agreed to in House                                                     | Given          |
-+-------------+----------------------------------------------------------------------------------------------+----------------+
-| `E20000`    | Presented to President                                                                       | Inferred       |
-+-------------+----------------------------------------------------------------------------------------------+----------------+
-| `H12700`    | Provision of consideration and/or debate                                                     | Inferred       |
-+-------------+----------------------------------------------------------------------------------------------+----------------+
-| `H1B000`    | Pursuant to provisions of H. Res. 41/85/330/380/403/473/486/504/ 535/601/912, resolution is: | Inferred       |
-|             |                                                                                              |                |
-|             | -   considered passed House                                                                  |                |
-|             |                                                                                              |                |
-|             | -   considered vacated                                                                       |                |
-|             |                                                                                              |                |
-|             | -   laid on the table                                                                        |                |
-+-------------+----------------------------------------------------------------------------------------------+----------------+
-| `H1L210`    | Rules committee resolution reported to house                                                 | Inferred       |
-+-------------+----------------------------------------------------------------------------------------------+----------------+
-| `H1L220`    | Rule passed House                                                                            | Inferred       |
-+-------------+----------------------------------------------------------------------------------------------+----------------+
-| `H30000`    | Considered:                                                                                  | Inferred       |
-|             |                                                                                              |                |
-|             | -   as privileged matter                                                                     |                |
-|             |                                                                                              |                |
-|             | -   as unfinished business                                                                   |                |
-|             |                                                                                              |                |
-|             | -   by unanimous consent                                                                     |                |
-|             |                                                                                              |                |
-|             | -   under suspension of the rules                                                            |                |
-|             |                                                                                              |                |
-|             | -   under provisions of rule H. Res. XXX                                                     |                |
-+-------------+----------------------------------------------------------------------------------------------+----------------+
-| `H30200`    | -   Request for unanimous consent to consider bill                                           | Inferred       |
-|             |                                                                                              |                |
-|             | -   Chair lays bill before the House w/o objection                                           |                |
-+-------------+----------------------------------------------------------------------------------------------+----------------+
-| `H30300`    | Move to suspend rules and pass the bill/agree to the resolution                              | Inferred       |
-+-------------+----------------------------------------------------------------------------------------------+----------------+
-| `H30800`    | Consideration initiated                                                                      | Inferred       |
-+-------------+----------------------------------------------------------------------------------------------+----------------+
-| `H35000`    | Previous question ordered:                                                                   | Inferred       |
-|             |                                                                                              |                |
-|             | -   pursuant to the rule                                                                     |                |
-|             |                                                                                              |                |
-|             | -   pursuant to a previous order of the House                                                |                |
-|             |                                                                                              |                |
-|             | -   agreed to by vote                                                                        |                |
-|             |                                                                                              |                |
-|             | -   without objection                                                                        |                |
-+-------------+----------------------------------------------------------------------------------------------+----------------+
-| `H36100`    | Move to commit w/instructions to a Select committee                                          | Inferred       |
-+-------------+----------------------------------------------------------------------------------------------+----------------+
-| `H36110`    | Failed move to commit w/instructions                                                         | Inferred       |
-+-------------+----------------------------------------------------------------------------------------------+----------------+
-| `H36200`    | Move to recommit to committee                                                                | Inferred       |
-+-------------+----------------------------------------------------------------------------------------------+----------------+
-| `H36210`    | Failed move to recommit to committee                                                         | Inferred       |
-+-------------+----------------------------------------------------------------------------------------------+----------------+
-| `H36500`    | Move to table the measure                                                                    | Inferred       |
-+-------------+----------------------------------------------------------------------------------------------+----------------+
-| `H36510`    | Passed move to table the measure                                                             | Inferred       |
-+-------------+----------------------------------------------------------------------------------------------+----------------+
-| `H36600`    | Move to:                                                                                     | Inferred       |
-|             |                                                                                              |                |
-|             | -   reconsider                                                                               |                |
-|             |                                                                                              |                |
-|             | -   table motion to reconsider                                                               |                |
-|             |                                                                                              |                |
-|             | -   agree                                                                                    |                |
-|             |                                                                                              |                |
-|             | -   postpone consideration                                                                   |                |
-+-------------+----------------------------------------------------------------------------------------------+----------------+
-| `H36610`    | Passed move to:                                                                              | Inferred       |
-|             |                                                                                              |                |
-|             | -   reconsider                                                                               |                |
-|             |                                                                                              |                |
-|             | -   table motion to reconsider                                                               |                |
-|             |                                                                                              |                |
-|             | -   agree                                                                                    |                |
-|             |                                                                                              |                |
-|             | -   postpone consideration                                                                   |                |
-+-------------+----------------------------------------------------------------------------------------------+----------------+
-| `H36700`    | Move to refer to a select committee                                                          | Inferred       |
-+-------------+----------------------------------------------------------------------------------------------+----------------+
-| `H37100`    | Passage of/agreeing to resolution                                                            | Inferred       |
-+-------------+----------------------------------------------------------------------------------------------+----------------+
-| `H37220`    | Vote demanded at conclusion of debate                                                        | Inferred       |
-+-------------+----------------------------------------------------------------------------------------------+----------------+
-| `H37300`    | Vote on motion to suspend the rules and pass the bill /                                      | Inferred       |
-|             |                                                                                              |                |
-|             | Passage of bill under suspension of rules                                                    |                |
-+-------------+----------------------------------------------------------------------------------------------+----------------+
-| `H38310`    | Motion to reconsider laid on the table                                                       | Inferred       |
-+-------------+----------------------------------------------------------------------------------------------+----------------+
-| `H38400`    | Move to reconsider vote                                                                      | Inferred       |
-+-------------+----------------------------------------------------------------------------------------------+----------------+
-| `H38410`    | Vote on motion to reconsider                                                                 | Inferred       |
-+-------------+----------------------------------------------------------------------------------------------+----------------+
-| `H38800`    | Measure title amended                                                                        | Inferred       |
-+-------------+----------------------------------------------------------------------------------------------+----------------+
-| `H38900`    | Clerk authorized to make technical and formatting corrections                                | Inferred       |
-+-------------+----------------------------------------------------------------------------------------------+----------------+
-| `H8A000`    | Previous question on the motion was ordered                                                  | Inferred       |
-+-------------+----------------------------------------------------------------------------------------------+----------------+
-| `H8D000`    | Debate                                                                                       | Inferred       |
-+-------------+----------------------------------------------------------------------------------------------+----------------+
++-------------+----------------------------------------------------------------------------------------------+----------+
+| Action Code | Action                                                                                       | Provided |
++=============+==============================================================================================+==========+
+| `17000`     | Passed/agreed to in Senate                                                                   | X        |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `8000`      | Passed/agreed to in House                                                                    | X        |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `9000`      | Failed of passage/not agreed to in House                                                     | X        |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `E20000`    | Presented to President                                                                       |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H12700`    | Provision of consideration and/or debate                                                     |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H1B000`    | Pursuant to provisions of H. Res. 41/85/330/380/403/473/486/504/ 535/601/912, resolution is: |          |
+|             |                                                                                              |          |
+|             | -   considered passed House                                                                  |          |
+|             |                                                                                              |          |
+|             | -   considered vacated                                                                       |          |
+|             |                                                                                              |          |
+|             | -   laid on the table                                                                        |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H1L210`    | Rules committee resolution reported to house                                                 |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H1L220`    | Rule passed House                                                                            |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H14000`    | Received in the House                                                                        |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H15000`    | Held at the desk                                                                             |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H30000`    | Considered:                                                                                  |          |
+|             |                                                                                              |          |
+|             | -   as privileged matter                                                                     |          |
+|             |                                                                                              |          |
+|             | -   as unfinished business                                                                   |          |
+|             |                                                                                              |          |
+|             | -   by unanimous consent                                                                     |          |
+|             |                                                                                              |          |
+|             | -   under suspension of the rules                                                            |          |
+|             |                                                                                              |          |
+|             | -   under provisions of rule H. Res. XXX                                                     |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H30200`    | -   Request for unanimous consent to consider bill                                           |          |
+|             |                                                                                              |          |
+|             | -   Chair lays bill before the House w/o objection                                           |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H30300`    | Move to suspend rules and pass the bill/agree to the resolution                              |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H30800`    | Consideration initiated                                                                      |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H35000`    | Previous question ordered:                                                                   |          |
+|             |                                                                                              |          |
+|             | -   pursuant to the rule                                                                     |          |
+|             |                                                                                              |          |
+|             | -   pursuant to a previous order of the House                                                |          |
+|             |                                                                                              |          |
+|             | -   agreed to by vote                                                                        |          |
+|             |                                                                                              |          |
+|             | -   without objection                                                                        |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H36100`    | Move to commit w/instructions to a Select committee                                          |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H36110`    | Failed move to commit w/instructions                                                         |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H36200`    | Move to recommit to committee                                                                |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H36210`    | Failed move to recommit to committee                                                         |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H36500`    | Move to table the measure                                                                    |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H36510`    | Passed move to table the measure                                                             |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H36600`    | Move to:                                                                                     |          |
+|             |                                                                                              |          |
+|             | -   reconsider                                                                               |          |
+|             |                                                                                              |          |
+|             | -   table motion to reconsider                                                               |          |
+|             |                                                                                              |          |
+|             | -   agree                                                                                    |          |
+|             |                                                                                              |          |
+|             | -   postpone consideration                                                                   |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H36610`    | Passed move to:                                                                              |          |
+|             |                                                                                              |          |
+|             | -   reconsider                                                                               |          |
+|             |                                                                                              |          |
+|             | -   table motion to reconsider                                                               |          |
+|             |                                                                                              |          |
+|             | -   agree                                                                                    |          |
+|             |                                                                                              |          |
+|             | -   postpone consideration                                                                   |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H36700`    | Move to refer to a select committee                                                          |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H37100`    | Passage of/agreeing to resolution                                                            |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H37220`    | Vote demanded at conclusion of debate                                                        |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H37300`    | Vote on motion to suspend the rules and pass the bill /                                      |          |
+|             |                                                                                              |          |
+|             | Passage of bill under suspension of rules                                                    |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H38310`    | Motion to reconsider laid on the table                                                       |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H38400`    | Move to reconsider vote                                                                      |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H38410`    | Vote on motion to reconsider                                                                 |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H38800`    | Measure title amended                                                                        |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H38900`    | Clerk authorized to make technical and formatting corrections                                |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H8A000`    | Previous question on the motion was ordered                                                  |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H8D000`    | Debate                                                                                       |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
 
 : Floor Action Codes
 
@@ -1196,12 +1203,15 @@ floor_action_codes = tribble(
 Even within action code, there appears to be different actions in some cases
 
 ```{r}
-floor_ambiguous_action_codes = c("H1B000", "H30000", "H30200", "H36600", "H36610")
+floor_ambiguous_action_codes = c("H1B000", "H12700", "H30000", "H30200", "H36600", "H36610", "H8D000")
 
-
+floor_actions %>% 
+  filter(action_code %in% floor_ambiguous_action_codes) %>% 
+  select(action_text, action_code, everything()) %>% 
+  group_split(action_code)
 ```
 
-```{r }
+```{r}
 #| label: floor-missing-codes
 floor_actions %>% 
   filter(is.na(action_code)) %>% 
@@ -1241,21 +1251,69 @@ Floor actions which do not have an action code appear to be Senate actions, but 
 
 -   Motion to reconsider cloture vote
 
-`E20000` is the same as the `28000` action code under the President action type
+`E20000` is the same as the `28000` action code under the President action type\\
+
+## Duplicates
+
+```{r}
+glimpse(floor_actions, width = 80)
+```
+
+```{r}
+(floor_dupes = get_dupes(floor_actions,
+                         action_text, bill_id,action_date, action_time,
+                         action_committee_system_code,
+                         action_committee_name))
+```
 
 # Discharge
 
 ```{r}
 #| label: discharge-action-codes
-actions_joined %>% 
-  filter(action_type == "Discharge") %>% 
-  count(action_source_name, action_code, sort = T)
+discharge_actions = actions_joined %>% 
+  filter(action_type == "Discharge")
 ```
 
-```{r }
+Where are discharge data coming from?
+
+```{r}
+discharge_actions %>% 
+  count(action_source_name, sort = T)
+```
+
+```{r}
+discharge_actions %>% 
+  # Count missing obs for each variable
+  summarise(across(everything(), ~sum(is.na(.))),
+            n = n()) %>% 
+  # Pivot all except n
+  pivot_longer(-n, names_to = "column", values_to = "n_missing") %>% 
+  # Calc % missing
+  mutate(pct_missing = n_missing/n) %>% 
+  arrange(desc(pct_missing))
+```
+
+What action codes do we have?
+
+```{r}
+discharge_actions %>% 
+  count(action_code, action_desc, sort = T)
+```
+
+## Missing Action Description
+
+```{r}
+discharge_actions %>% 
+  # Filter actions with action codes but no action description
+  filter(!is.na(action_code), is.na(action_desc)) %>% 
+  count(action_code, action_text) %>% 
+  arrange(action_code, desc(n))# %>% 
+  # View("Discharge Action Codes")
+```
+
+```{r}
 #| label: discharge-actions
-actions_joined %>% 
-  filter(action_type == "Discharge") %>% 
+discharge_actions %>% 
   add_count(action_code, name = "action_code_count") %>% 
   # Select distinct action codes and their descriptions
   distinct(action_code, action_code_count,
@@ -1276,19 +1334,63 @@ actions_joined %>%
 
 : Discharge Action Codes
 
-# President
+## Duplicates
 
-```{r }
-#| label: president-action-codes
-actions_joined %>% 
-  filter(action_type == "President") %>% 
-  count(action_source_name, action_code, sort = T)
+```{r}
+(discharge_dupes = get_dupes(discharge_actions,
+                         action_text, bill_id,action_date, action_time,
+                         action_committee_system_code,
+                         action_committee_name))
 ```
 
-```{r }
+# President
+
+```{r}
+#| label: president-action-codes
+president_actions = actions_joined %>% 
+  filter(action_type == "President")
+```
+
+Where are president data coming from?
+
+```{r}
+president_actions %>% 
+  count(action_source_name, sort = T)
+```
+
+```{r}
+president_actions %>% 
+  # Count missing obs for each variable
+  summarise(across(everything(), ~sum(is.na(.))),
+            n = n()) %>% 
+  # Pivot all except n
+  pivot_longer(-n, names_to = "column", values_to = "n_missing") %>% 
+  # Calc % missing
+  mutate(pct_missing = n_missing/n) %>% 
+  arrange(desc(pct_missing))
+```
+
+What action codes do we have?
+
+```{r}
+president_actions %>% 
+  count(action_code, action_desc, sort = T)
+```
+
+## Missing Action Descriptions
+
+```{r}
+president_actions %>% 
+  # Filter actions with action codes but no action description
+  filter(!is.na(action_code), is.na(action_desc)) %>% 
+  count(action_code, action_text) %>% 
+  arrange(action_code, desc(n))# %>% 
+  # View("Discharge Action Codes")
+```
+
+```{r}
 #| label: president-actions
-actions_joined %>% 
-  filter(action_type == "President") %>% 
+president_actions %>% 
   add_count(action_code, name = "action_code_count") %>% 
   # Select distinct action codes and their descriptions
   distinct(action_code, action_code_count,
@@ -1300,17 +1402,17 @@ actions_joined %>%
   # View("President Action Codes")
 ```
 
-| Action Code | Action                 | Given/Inferred |
-|-------------|------------------------|----------------|
-| `28000`     | Presented to President | Given          |
-| `E30000`    | Signed by President    | Inferred       |
-| `E40000`    | Became Public Law      | Inferred       |
+| Action Code | Action                 | Provided |
+|-------------|------------------------|----------|
+| `28000`     | Presented to President | X        |
+| `E30000`    | Signed by President    |          |
+| `E40000`    | Became Public Law      |          |
 
 : President Action Codes
 
 # Became Law
 
-```{r }
+```{r}
 #| label:  becamelaw-action-codes
 actions_joined %>% 
   filter(action_type == "BecameLaw") %>% 
@@ -1341,7 +1443,7 @@ actions_joined %>%
 
 # Missing Action Type
 
-```{r }
+```{r}
 #| label:  missing-actions
 actions_joined %>% 
   filter(action_type == "(Missing Action Type)") %>% 
@@ -1588,7 +1690,7 @@ action_order_summary %>%
   theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
 ```
 
-```{r }
+```{r}
 #| label:  action-order-boxplot2
 #| eval: false
 actions_unnested %>% 
@@ -1605,7 +1707,7 @@ actions_unnested %>%
 
 ```
 
-```{r }
+```{r}
 #| label:  sample-actions-plot
 actions_unnested %>% 
   filter(bill_id == sample(bill_id, 1)) -> sample_bill_actions
