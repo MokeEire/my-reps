@@ -8,6 +8,7 @@ library(XML)
 library(xml2)
 library(log4r)
 library(mokeR)
+library(janitor)
 
 
 # Logging functions -------------------------------------------------------
@@ -790,7 +791,7 @@ code_actions = function(actions_df,
   
   # Join in action codes
   left_join(actions_new_cols, 
-            action_codes, by = c("action_code" = "Code")) %>% 
+            action_codes, by = "action_code") %>% 
     number_actions() %>% 
     # Create boolean for whether bill became law
     mutate(became_law = ("BecameLaw" %in% action_type), .after = action_time) %>% 
