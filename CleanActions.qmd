@@ -188,6 +188,9 @@ Bills were always introduced, but only 37% received any attention in committees,
 govinfo provides a table of action codes in the [Bill Status User Guide](https://github.com/usgpo/bill-status/blob/main/BILLSTATUS-XML_User_User-Guide.md#3-action-code-element-possible-values), but unfortunately, as the Government Publishing Office describes, there are a number of issues:
 
 > *Various code sets are used by multiple systems in the House, Senate, and Library of Congress by legislative clerks and data editors for functions independent of this bulk data set. As new codes and systems were developed, there was no coordinated effort to retroactively apply new codes to old records. Many codes are concatenated with other codes or elements or utilize free text. Codes in one set may be redundant with a different code in another code set. Additionally, some codes may have been used and re-used over the years for different purposes further complicating the ability to create an authoritative list.*
+>
+> *\
+> The original code set can be found at <http://www.loc.gov/pictures/resource/ppmsca.33996/>.*
 
 So action codes will need a good bit of cleaning before they're useful. To start, I join the codes that do exist using a two column csv file to see where we have action code information. This looks like:
 
@@ -415,21 +418,21 @@ intro_actions %>%
 
 Below is a table of action codes and a code description, either provided by govinfo or inferred by me.
 
-+---------------+-----------------------------------------------------------+------------+
-| Action Code   | Code Description                                          | Provided   |
-+===============+===========================================================+============+
-| `1000`        | Introduced in House                                       | X          |
-+---------------+-----------------------------------------------------------+------------+
-| `10000`       | Introduced in Senate                                      | X          |
-+---------------+-----------------------------------------------------------+------------+
-| `B00100`      | Sponsor introductory remarks on measure                   |            |
-+---------------+-----------------------------------------------------------+------------+
-| `H11100`      | Referred to Committee                                     |            |
-+---------------+-----------------------------------------------------------+------------+
-| `H11210`      | Committee granted an extension for further consideration  |            |
-+---------------+-----------------------------------------------------------+------------+
-| `Intro-H`     | Introduced in House                                       |            |
-+---------------+-----------------------------------------------------------+------------+
++-------------+----------------------------------------------------------+-----------+
+| Action Code | Code Description                                         | Provided  |
++=============+==========================================================+===========+
+| `1000`      | Introduced in House                                      | X         |
++-------------+----------------------------------------------------------+-----------+
+| `10000`     | Introduced in Senate                                     | X         |
++-------------+----------------------------------------------------------+-----------+
+| `B00100`    | Sponsor introductory remarks on measure                  |           |
++-------------+----------------------------------------------------------+-----------+
+| `H11100`    | Referred to Committee                                    |           |
++-------------+----------------------------------------------------------+-----------+
+| `H11210`    | Committee granted an extension for further consideration |           |
++-------------+----------------------------------------------------------+-----------+
+| `Intro-H`   | Introduced in House                                      |           |
++-------------+----------------------------------------------------------+-----------+
 
 Put these codes into a tibble to join on action code.
 
