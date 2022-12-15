@@ -395,13 +395,16 @@ intro_actions %>%
 
 No Intro/Referral actions have a timestamp. Action codes are missing for 12% of Intro/Referral actions, while 2/3 are missing action descriptions.
 
-Action codes are very helpful because they allow us to differentiate between actions that fall under the same action type but which mean very different things. An important aspect of cleaning the actions data is to identify the following:
+Action codes are very helpful because they allow us to differentiate between the various actions of the same general type. 
+Some questions to answer about the action codes:
 
-1.  What actions are coded and how many actions are missing codes?
-2.  How many actions are coded but missing code descriptions?
-3.  Can we derive a code description for action codes based on the action text?
-4.  For actions without a description or code, can we derive a code/category based on the action text?
-5.  Are there any duplicated data?
+1.  Which actions have codes?
+2. How many actions are missing codes?
+3.  How many actions have codes but are missing code descriptions?
+4.  For actions with a code but without a description, can we infer a description for the action?
+4.  For actions without a code, can we infer a description for the action similar to action codes?
+5.  Do we have duplicate actions?
+
 
 What codes do we have?
 
@@ -412,18 +415,18 @@ count(intro_actions, action_code, action_desc, sort = T)
 How many actions are coded?
 
 ```{r}
-nrow(intro_actions[!is.na(intro_actions$action_code),])
+nrow(intro_actions[!is.na(intro_actions$action_code), ])
 ```
 
 How many actions are coded but missing descriptions?
 
 ```{r}
-nrow(intro_actions[!is.na(intro_actions$action_code)&is.na(intro_actions$action_desc),])
+nrow(intro_actions[!is.na(intro_actions$action_code) & is.na(intro_actions$action_desc), ])
 ```
 
 ## Missing Action Description
 
-Can we derive a description for action codes based on the text of their actions? Use `action_text` to get further information on action codes without descriptions.
+Can we come up with a description for action codes based on the text of their actions? Use `action_text` to get further information on action codes without descriptions.
 
 ```{r}
 intro_actions %>% 
@@ -471,7 +474,7 @@ Put these codes into a tibble to join on action code.
 
 ## Missing Action Code
 
-In cases where the action does not have a code, can we come up with an action subtype that is somewhat equivalent to action codes?
+In cases where the action does not have a code, can we come up with a category with similar precision to an action code based on the action text?
 
 ```{r}
 (intro_actions_missing_code = intro_actions %>% 
@@ -525,7 +528,7 @@ intro_actions_missing_code %>%
   count(action_desc, sort = T)
 ```
 
-Join intro actions to our action codes and fill in missing descriptions using the above regex.
+Join our action codes to intro actions and fill in missing descriptions using the above regex.
 
 ```{r}
 (intro_actions_coded = intro_actions %>%
