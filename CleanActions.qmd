@@ -10,7 +10,7 @@ format:
     toc: true
     code-fold: true
     code-tools: true
-editor: visual
+editor: source
 ---
 
 ```{r}
