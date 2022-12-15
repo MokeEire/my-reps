@@ -42,7 +42,7 @@ Using the `collect_data.R` script, I parsed govinfo's house and senate bill data
 
 -   Uses action text and codes (where available) to produce a more comprehensive set of categories for each legislative step
 
-# Overview of the data
+# Data overview
 
 First, `unnest()` the actions from the bills to see action-level information.
 
@@ -51,6 +51,7 @@ First, `unnest()` the actions from the bills to see action-level information.
 # (this includes the actions list column)
 (actions_unnested = select(all_bills, 
                            bill_id, title, bill_type, actions) %>% 
+   # Categorize type of legislation
   mutate(bill_type_cat = case_when(bill_type %in% c("HR", "S") ~ "Bill",
                                    bill_type %in% c("HJRES", "SJRES") ~ "Joint Resolution",
                                    bill_type %in% c("HRES", "SRES") ~ "Simple Resolution",
@@ -67,81 +68,40 @@ First, `unnest()` the actions from the bills to see action-level information.
 
 ```
 
-We can also use `glimpse()` to give us the dimensions of the data, the data types and the first few elements of each column.
+`glimpse()` provides the dimensions of the data, the data types and the first few elements of each column.
 
 ```{r}
 #| label: glimpse-actions
 glimpse(actions_unnested, width = 80)
 ```
 
-Possible action information includes:
+The data contains `r scales::comma(nrow(actions_unnested))` actions on `r scales::comma(n_distinct(actions_unnested$bill_id))` different bills. How often do we have data for each column?
+
+```{r}
+actions_unnested %>% 
+  # Select action columns
+  select(starts_with("action")) %>% 
+  # Calculate # of data points present over # of rows
+  summarise(across(everything(), ~sum(!is.na(.))/n())) %>% 
+  # pivot
+  pivot_longer(everything(), names_to = "column", values_to = "pct_present")
+```
+
+Action data includes:
 
 -   the date/time of the action
 
 -   the source system which records the action
 
--   a description of the action
+-   a text description of the action
 
--   the type of action and a code for it
+-   the type of action
+
+-   a specific code for the action
 
 -   the committee related to the action
 
-The data contains `r scales::comma(nrow(actions_unnested))` actions from `r scales::comma(n_distinct(actions_unnested$bill_id))` bills. How are actions distributed across bills?
-
-```{r}
-# Count actions by chamber and bill
-count(actions_unnested, bill_id) %>% 
-  # Plot action count by origin chamber
-  ggplot(., aes(x = n))+
-  # Histogram
-  geom_histogram(binwidth = 1, 
-                 fill = viz_colours[1],
-                 colour = my_col_pal[1], 
-                 alpha = .7,
-                 position = position_identity())+
-  # Axes
-  scale_x_continuous(expand = expansion(add = c(2, 0)),
-                     breaks = scales::breaks_pretty())+
-  scale_y_continuous(expand = expansion(add = c(0,200)), 
-                     labels = scales::comma)+
-  scale_fill_manual(name = NULL, values = viz_colours[1:2])+
-  # Labels
-  labs(x = "Actions", y = "Bills", 
-       title = "How many actions are recorded on each bill?",
-       subtitle = "Distribution of actions on bills")+
-  theme_moke(plots_pane = T)+
-  theme(axis.line.y = element_blank(),
-        legend.position = c(.9, .7))
-```
-
-```{r}
-# Count actions for each bill
-count(actions_unnested, bill_id, name = "actions") %>% 
-  summary()
-```
-
-Does the distribution vary by bill type?
-
-```{r}
-# Count actions for each bill
-count(actions_unnested, bill_type_cat, bill_id, name = "actions") %>% 
-  # Group by bill type
-  group_by(bill_type_cat) %>% 
-  # summary stats
-  summarise(
-    n_bills = n_distinct(bill_id),
-    min = min(actions),
-    p25 = quantile(actions, .25),
-    median = median(actions),
-    mean = mean(actions),
-    p75 = quantile(actions, .75),
-    max = max(actions)
-  )
-```
-
-The vast majority of bills have 5 or fewer actions recorded on them. It seems like there are slightly more actions on concurrent resolutions on average, but this observation may change after cleaning the data.
-
-To clean the data, and to break up the work, it helps to think about the [different steps of the legislative process](https://www.congress.gov/legislative-process):
+To clean the data, and to break up the work, it helps to think about the different steps of the legislative process which, [according to congress.gov](https://www.congress.gov/legislative-process) are:
 
 -   Introduction and Referral of Bills
 
@@ -159,31 +119,32 @@ To clean the data, and to break up the work, it helps to think about the [differ
 
 -   Presidential Actions
 
-`action_type` is the most closely aligned with these steps, while `action_code` is a more fine-grain category but is more often missing. `action_source_name` indicates the source of the action data and is useful for understanding how the data is constructed.
+There are a few columns which are helpful for identifying which of these steps an action belongs to. `action_type` aligns most closely with these steps, while `action_code` is a more fine-grain category but is more often missing. `action_source_name` indicates the source of the action data and is useful for understanding how the data is constructed.
 
 ## Action Type
 
-`action_type` has the following values, where `n` is the number of actions:
+The different values of `action_type`, where `n` is the number of actions:
 
 ```{r}
 count(actions_unnested, action_type)
 ```
 
-How often do actions of each type occur on bills?
+How many bills does each type of action occur on? This is a different question than the counts above because there can be multiple of the same action type on a bill.
 
 ```{r}
 (action_type_summary = actions_unnested %>% 
   mutate(total_bills = n_distinct(bill_id)) %>% 
-  group_by(action_type) %>% 
+  group_by(action_type, total_bills) %>% 
   # Count actions, bills, and get % of total bills
   summarise(
     actions = n(),
     bills = n_distinct(bill_id),
-    bills_pct = scales::percent(bills/unique(total_bills), accuracy = .1)
+    bills_pct = scales::percent(bills/unique(total_bills), accuracy = .1), 
+    .groups = "drop"
   ))
 ```
 
-Bills were always introduced, but only 37% received any attention in committees, 10% went to the floor, and 1.3% became law.
+From this we can see that bills were always introduced, but only 38% received any attention in committees, \~10% went to the floor, and 1.3% became law.
 
 ## Action Codes
 
