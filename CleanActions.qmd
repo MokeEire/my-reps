@@ -505,7 +505,7 @@ The actions can be grouped into the following:
 -   Referred to committee
 
 ::: callout-caution
-## Assumption
+### Assumption
 
 The differences between "Read the second time and referred to the Committee..." and "Read twice and referred to the Committee..." are not vitally important and can be combined.\
 To verify this, I will look into the meaning of a bill being read a second time in the Senate.\
@@ -582,10 +582,10 @@ intro_dupes %>%
 The `action_code`s **1000** and **Intro-H** seem to be duplicates. Let's look at them.
 
 ::: callout-note
-## Assumption
+### Assumption
 
 A bill being received in the Senate is different than being introduced in the Senate.\
-If this is incorrect, we'll need to deduplicate those too.
+If this is incorrect, we may need to deduplicate those too.
 :::
 
 ```{r}
