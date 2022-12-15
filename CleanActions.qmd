@@ -174,15 +174,15 @@ actions_joined %>%
   summarise(
     actions = n(),
     code_present = sum(!is.na(action_code)),
-    desc_present = sum(!is.na(action_desc)),
+    code_desc_present = sum(!is.na(action_desc)),
     code_no_desc = sum(!is.na(action_code)&is.na(action_desc))
   )
 ```
 
-The action code data has two types of issues here:
+Note there are two types of issues here:
 
-1.  Missing action code description
-2.  Missing action code altogether
+1.  Missing an action code
+2.  Having an action code but missing a code description
 
 How do these issues differ by action type?
 
@@ -233,8 +233,8 @@ action_codes_summary_stats %>%
                      expand = expansion(mult = c(0, .1)))+
   # scale_fill_manual(name = NULL, values = viz_colours[1:7])+
   # ggpattern::scale_pattern_fill_manual(name = NULL, values = viz_colours[1:7])+
-  labs(title = "What actions are coded?",
-       subtitle = "Action code and description availability, by action type",
+  labs(title = "How often are action code and code description information available?",
+       subtitle = "Action code and description presence, by action type",
        caption = "Striped area indicates code is present but no description",
        # caption = source_caption("govinfo/US GPO"),
        y = NULL, x = "Actions")+
@@ -246,6 +246,8 @@ action_codes_summary_stats %>%
 ```
 
 ```{r}
+action_codes_summary_stats
+
 actions_joined %>% 
   group_by(action_type) %>%
   # Count actions, actions w/code, and coded proportion
@@ -306,6 +308,61 @@ action_source_by_type %>%
 ```
 
 The majority of actions from the **House floor actions** source are Intro/Referrals?
+
+How are actions distributed across bills?
+
+```{r}
+# Count actions by chamber and bill
+count(actions_unnested, bill_id) %>% 
+  # Plot action count by origin chamber
+  ggplot(., aes(x = n))+
+  # Histogram
+  geom_histogram(binwidth = 1, 
+                 fill = viz_colours[1],
+                 colour = my_col_pal[1], 
+                 alpha = .7,
+                 position = position_identity())+
+  # Axes
+  scale_x_continuous(expand = expansion(add = c(2, 0)),
+                     breaks = scales::breaks_pretty())+
+  scale_y_continuous(expand = expansion(add = c(0,200)), 
+                     labels = scales::comma)+
+  scale_fill_manual(name = NULL, values = viz_colours[1:2])+
+  # Labels
+  labs(x = "Actions", y = "Bills", 
+       title = "How many actions are recorded on each bill?",
+       subtitle = "Distribution of actions on bills")+
+  theme_moke(plots_pane = T)+
+  theme(axis.line.y = element_blank(),
+        legend.position = c(.9, .7))
+```
+
+```{r}
+# Count actions for each bill
+count(actions_unnested, bill_id, name = "actions") %>% 
+  summary()
+```
+
+Does the distribution vary by bill type?
+
+```{r}
+# Count actions for each bill
+count(actions_unnested, bill_type_cat, bill_id, name = "actions") %>% 
+  # Group by bill type
+  group_by(bill_type_cat) %>% 
+  # summary stats
+  summarise(
+    n_bills = n_distinct(bill_id),
+    min = min(actions),
+    p25 = quantile(actions, .25),
+    median = median(actions),
+    mean = mean(actions),
+    p75 = quantile(actions, .75),
+    max = max(actions)
+  )
+```
+
+The vast majority of bills have 5 or fewer actions recorded on them. It seems like there are slightly more actions on concurrent resolutions on average, but this observation may change after cleaning the data.
 
 # Intro/Referral
 
