@@ -1,0 +1,1741 @@
+---
+title: "Cleaning Legislative Actions Data"
+date: "`r Sys.Date()`"
+execute: 
+  warning: false
+  message: false
+format: 
+  html:
+    theme: litera
+    toc: true
+    code-fold: true
+    code-tools: true
+editor: source
+---
+
+```{r}
+#| label: setup
+#| include: false
+library(extrafont)
+library(tictoc)
+library(furrr)
+library(here)
+library(reactable)
+library(reactablefmtr)
+plan(multisession)
+source("R/parsing_functions.R")
+
+# Load cleaned R objects
+all_bills = readRDS(here("data", "cleaned", "BILLSTATUS_117_2022-11-10.Rds"))
+# actions = readRDS(here("data", "cleaned", "BILLSTATUS_117_Actions.Rds"))
+
+# Action code mapping table from GovInfo
+# https://github.com/usgpo/bill-status/blob/main/BILLSTATUS-XML_User_User-Guide.md#3-action-code-element-possible-values
+action_codes = read_csv(here("data", "action_codes.csv"), col_types = "cc")
+```
+
+Using the `collect_data.R` script, I parsed govinfo's house and senate bill data from the current (117th) congress. This document unpacks and cleans the actions data. The cleaning process does the following:
+
+-   Ensures fields have consistent data types
+
+-   Deduplicates actions in cases where multiple source systems record the same action
+
+-   Uses action text and codes (where available) to produce a more comprehensive set of categories for each legislative step
+
+# Data overview
+
+First, let's have a look at the data.
+`unnest()` actions from the bill data to see action-level information.
+
+```{r}
+# Select non-list columns and then select action-related columns
+# (this includes the actions list column)
+(actions_unnested = select(all_bills, 
+                           bill_id, title, bill_type, actions) %>% 
+   # Categorize type of legislation
+  mutate(bill_type_cat = case_when(bill_type %in% c("HR", "S") ~ "Bill",
+                                   bill_type %in% c("HJRES", "SJRES") ~ "Joint Resolution",
+                                   bill_type %in% c("HRES", "SRES") ~ "Simple Resolution",
+                                   bill_type %in% c("HCONRES", "SCONRES") ~ "Concurrent Resolution")) %>% 
+    # Unnest actions
+  unnest(actions)) %>% 
+  # After assignment: Subset the data
+  head(20) %>% 
+  select(bill_id, title, bill_type_cat, 
+         action_date, action_time, 
+         action_type, action_code,
+         action_text,
+         action_source_name, action_committee_name)
+
+```
+
+`glimpse()` provides the dimensions of the data, the data types and the first few elements of each column.
+
+```{r}
+#| label: glimpse-actions
+glimpse(actions_unnested, width = 80)
+```
+
+The data contains `r scales::comma(nrow(actions_unnested))` actions on `r scales::comma(n_distinct(actions_unnested$bill_id))` different bills. 
+
+Action data can include:
+
+-   the date/time of the action
+
+-   the source system which records the action
+
+-   a text description of the action
+
+-   the type of action
+
+-   a specific code for the action
+
+-   the committee related to the action
+
+Naturally, each field is not always populated. How much data do we have for each column?
+
+```{r}
+actions_unnested %>% 
+  # Select action columns
+  select(starts_with("action")) %>% 
+  # Calculate # of data points present over # of rows
+  summarise(across(everything(), ~sum(!is.na(.))/n())) %>% 
+  # pivot
+  pivot_longer(everything(), names_to = "column", values_to = "pct_present")
+```
+
+Let's look at some of the key columns in detail.
+
+## Action Source
+
+`action_source_name` indicates the source of the action data and is useful for understanding how the data is constructed.
+What proportion of the data does each source type account for?
+
+```{r}
+actions_unnested %>% 
+  add_tally() %>% 
+  group_by(action_source_name) %>% 
+  summarise(
+    actions = n(),
+    proportion = scales::percent(n()/unique(n), accuracy = .1)
+  )
+```
+
+Library of Congress accounts for a little under half of the data while the House floor actions source accounts for a little less than a third of actions data.
+
+Which types of actions are in each action source?
+
+```{r}
+#| label: source-by-type
+action_source_by_type = actions_unnested %>%
+    # Count actions in each source
+    add_count(action_source_name, name = "source_actions") %>%
+    group_by(action_source_name, action_type) %>%
+    summarise(
+      bills = n_distinct(bill_id),
+      actions = n(),
+      actions_pct = scales::percent(n()/unique(source_actions), accuracy = .1),
+      # actions_pct = actions/unique(source_actions),
+      .groups = "drop"
+      # bills_pct = bills/sum(bills)
+    )
+
+action_source_by_type %>% 
+  tidyr::complete(action_source_name, action_type)
+
+```
+
+The majority of actions from the **House floor actions** source are Intro/Referrals?
+
+## Action Type
+
+To clean the data, and to break up the work, it helps to think about the different steps of the legislative process which, [according to congress.gov](https://www.congress.gov/legislative-process) are:
+
+-   Introduction and Referral of Bills
+
+-   Committee Consideration
+
+-   Calendars and Scheduling
+
+-   House Floor
+
+-   Senate Floor
+
+-   Executive Business in the Senate
+
+-   Resolving Differences
+
+-   Presidential Actions
+
+`action_type` is the field that aligns most closely with these steps.
+The different values of `action_type`, where `n` is the number of actions:
+
+```{r}
+count(actions_unnested, action_type)
+```
+
+How often does each action type occur on a bill? 
+
+```{r}
+(action_type_summary = actions_unnested %>% 
+  mutate(total_bills = n_distinct(bill_id)) %>% 
+  group_by(action_type, total_bills) %>% 
+  # Count actions, bills, and get % of total bills
+  summarise(
+    actions = n(),
+    bills = n_distinct(bill_id),
+    bills_pct = scales::percent(bills/unique(total_bills), accuracy = .1), 
+    .groups = "drop"
+  ))
+```
+
+Bills are always introduced, but only 38% received any attention in committees, \~10% went to the floor, and 1.3% became law.
+
+## Action Codes
+
+`action_code` is a more fine-grain category than `action_type` but is often missing. 
+govinfo provides a table of action codes in the [Bill Status User Guide](https://github.com/usgpo/bill-status/blob/main/BILLSTATUS-XML_User_User-Guide.md#3-action-code-element-possible-values)and describes the issues with the codes too:
+
+> *Various code sets are used by multiple systems in the House, Senate, and Library of Congress by legislative clerks and data editors for functions independent of this bulk data set. As new codes and systems were developed, there was no coordinated effort to retroactively apply new codes to old records. Many codes are concatenated with other codes or elements or utilize free text. Codes in one set may be redundant with a different code in another code set. Additionally, some codes may have been used and re-used over the years for different purposes further complicating the ability to create an authoritative list.*
+>
+> *\
+> The original code set can be found at <http://www.loc.gov/pictures/resource/ppmsca.33996/>.*
+
+So action codes will need a good bit of cleaning before they're useful. To start, I join the codes that do exist using a two column csv file to see where we have action code information. This looks like:
+
+```{r}
+#| label:  action-codes
+(actions_joined = actions_unnested %>% 
+    # Join actions to the list of action codes
+  left_join(action_codes, by = "action_code")) %>% 
+  glimpse(width = 80)
+```
+
+How often are action codes anddescriptions present?
+
+```{r}
+#| label: action-code-stats
+# Count actions with codes and descriptions
+actions_joined %>% 
+  summarise(
+    actions = n(),
+    code_present = sum(!is.na(action_code)),
+    code_desc_present = sum(!is.na(action_desc))
+  )
+```
+
+Check if cases exist where a description is present without an action code?
+
+```{r}
+actions_joined %>% 
+  filter(is.na(action_code)) %>% 
+  count(action_desc)
+# Should return missing action desc and the number of actions without action codes
+```
+
+
+Note there are cases where both `action_code` and `action_desc` are missing and cases where `action_desc` is missing while `action_code` is present.
+
+```{r}
+# Count actions with codes and descriptions by bill and action type
+(action_codes_summary_stats = actions_joined %>% 
+  # Make missing action types explicit
+  mutate(action_type = fct_explicit_na(action_type)) %>% 
+  # Count coded actions by chamber and action type
+  group_by(action_type) %>% 
+  summarise(
+    actions = n(),
+    code_present = sum(!is.na(action_code)),
+    code_present_pct = code_present/actions,
+    desc_present = sum(!is.na(action_desc)),
+    desc_present_pct = desc_present/actions,
+    # code_no_desc = sum(!is.na(action_code)&is.na(action_desc)),
+    # code_no_desc_pct = code_no_desc/actions,
+    .groups = "drop"
+  )) %>% 
+  mutate(across(ends_with("_pct"), scales::percent, accuracy = .1))
+
+```
+
+So there is some work to do for Intro/Referral, Committee, and Floor actions to develop comprehensive coding for each type of action (except perhaps `BecameLaw`). This means identifying actions missing action code or code description and categorizing them using the text of the action, the source name, date/time, and related actions as context.
+
+There are a number of cases where actions are duplicated in the data which need to be reconciled in order to make sense of the legislative timeline. Below are a list of the potential duplicates I have found:
+
+-   Action code `E30000` and `36000` with action type `President` and `BecameLaw` respectively appear to both represent the president signing a bill into law, while action codes `E40000` and `36000` with the same respective action types represent a bill becoming a public law. In this case, action type `President` and `BecameLaw` are interchangeable
+-   Action code `Intro-H` appears to be a duplicate of action code `1000`, both of which are `IntroReferral` action types
+
+
+
+
+How are actions distributed across bills?
+
+```{r}
+#| column: page
+#| fig-width: 14
+#| fig-height: 7
+# Count actions by chamber and bill
+count(actions_unnested, bill_id) %>% 
+  # filter(n < 100) %>%
+  # Plot action count by origin chamber
+  ggplot(., aes(x = n))+
+  # Histogram
+  geom_histogram(binwidth = 1, 
+                 fill = viz_colours[1],
+                 colour = my_col_pal[1], 
+                 alpha = .75,
+                 position = position_identity())+
+  # Axes
+  scale_x_continuous(expand = expansion(add = c(2, 0)),
+                     breaks = scales::breaks_pretty())+
+  scale_y_continuous(expand = expansion(add = c(0,200)), 
+                     labels = scales::comma)+
+  scale_fill_manual(name = NULL, values = viz_colours[1:2])+
+  # Labels
+  labs(x = "Actions", y = "Bills", 
+       title = "How much action does a bill get?",
+       subtitle = "Distribution of actions on bills")+
+  theme_moke(base_size = 11, plot_margin = margin(0,0,0,0))+
+  theme(axis.line.y = element_blank(),
+        legend.position = c(.9, .7))
+```
+
+
+
+```{r}
+# Count actions for each bill
+count(actions_unnested, bill_id, name = "actions") %>% 
+  summary()
+```
+
+Does the distribution vary by bill type?
+
+```{r}
+# Count actions for each bill
+count(actions_unnested, bill_type_cat, bill_id, name = "actions") %>% 
+  # Group by bill type
+  group_by(bill_type_cat) %>% 
+  # summary stats
+  summarise(
+    n_bills = n_distinct(bill_id),
+    min = min(actions),
+    p25 = quantile(actions, .25),
+    median = median(actions),
+    mean = mean(actions),
+    p75 = quantile(actions, .75),
+    max = max(actions)
+  )
+```
+
+The vast majority of bills have 5 or fewer actions recorded on them. It seems like there are slightly more actions on concurrent resolutions on average, but this observation may change after cleaning the data.
+
+The main components of this data cleaning are:
+
+- to categorize actions which are missing an action code or description, and 
+
+- to remove duplicate actions
+
+# Categorize Actions
+
+## Intro/Referral actions
+
+Legislation must be introduced either in the House or the Senate. Their designation depends on the type of legislation being introduced and the number of bills already introduced in the current congressional session. Bills are then referred to relevant committees to be further developed.
+
+> Upon introduction, the bill will receive a designation based on the chamber of introduction, for example, H.R. or H.J.Res. for House-originated bills or joint resolutions and S. or S.J.Res. for Senate-originated measures. It will also receive a number, which typically is the next number available in sequence during that two-year Congress.
+>
+> In the House, bills then are referred by the Speaker, on the advice of the nonpartisan [parliamentarian](https://www.congress.gov/help/legislative-glossary#glossary_parliamentarian "US Congress glossary entry for parliamentarian"), to all committees that have jurisdiction over the provisions in the bill, as determined by the chamber's standing rules and past referral decisions.\
+> ...\
+> In the Senate, bills are typically referred to committee in a similar process, though in almost all cases, the bill is referred to only the committee with jurisdiction over the issue that predominates in the bill. In a limited number of cases, a bill might not be referred to committee, but instead be placed directly on the Senate Calendar of Business through a series of procedural steps on the floor.
+
+```{r}
+intro_actions = actions_joined %>% 
+  filter(action_type == "IntroReferral")
+```
+
+What data is missing for intro actions?
+
+```{r}
+intro_actions %>% 
+  # Count missing obs for each variable
+  summarise(across(everything(), ~sum(is.na(.))),
+            n = n()) %>% 
+  # Pivot all except n
+  pivot_longer(-n, names_to = "column", values_to = "n_missing") %>% 
+  # Calc % missing
+  mutate(pct_missing = n_missing/n) %>% 
+  arrange(desc(pct_missing))
+```
+
+No Intro/Referral actions have a timestamp. Action codes are missing for 12% of Intro/Referral actions, while 2/3 are missing action descriptions.
+
+Action codes are very helpful because they allow us to differentiate between the various actions of the same general type. 
+Some questions to answer about the action codes:
+
+1.  Which actions have codes?
+2. How many actions are missing codes?
+3.  How many actions have codes but are missing code descriptions?
+4.  For actions with a code but without a description, can we infer a description for the action?
+4.  For actions without a code, can we infer a description for the action similar to action codes?
+5.  Do we have duplicate actions?
+
+What codes do we have?
+
+```{r}
+count(intro_actions, action_code, action_desc, sort = T)
+```
+
+How many actions are coded?
+
+```{r}
+nrow(intro_actions[!is.na(intro_actions$action_code), ])
+```
+
+How many actions are coded but missing descriptions?
+
+```{r}
+nrow(intro_actions[!is.na(intro_actions$action_code) & is.na(intro_actions$action_desc), ])
+```
+
+### Missing description
+
+Can we come up with a description for action codes based on the text of their actions? Use `action_text` to get further information on action codes without descriptions.
+
+```{r}
+intro_actions %>% 
+  # Filter actions with action codes but no action description
+  filter(!is.na(action_code), is.na(action_desc)) %>% 
+  # Arrange data to compare text for action codes
+  select(action_code, action_text, bill_id, action_date, everything()) %>% 
+  arrange(action_code, bill_id) %>% 
+  group_split(action_code)# %>% 
+  # View("Intro action codes w/o descriptions")
+```
+
+Below is a table of action codes and a code description, either provided by govinfo or inferred by me.
+
++-------------+----------------------------------------------------------+------------+
+| Action Code | Code Description                                         | Provided   |
++=============+==========================================================+============+
+| `1000`      | Introduced in House                                      | X          |
++-------------+----------------------------------------------------------+------------+
+| `10000`     | Introduced in Senate                                     | X          |
++-------------+----------------------------------------------------------+------------+
+| `B00100`    | Sponsor introductory remarks on measure                  |            |
++-------------+----------------------------------------------------------+------------+
+| `H11100`    | Referred to Committee                                    |            |
++-------------+----------------------------------------------------------+------------+
+| `H11210`    | Committee granted an extension for further consideration |            |
++-------------+----------------------------------------------------------+------------+
+| `Intro-H`   | Introduced in House                                      |            |
++-------------+----------------------------------------------------------+------------+
+
+Put these codes into a tibble to join on action code.
+
+```{r}
+# Put these codes into a table
+(intro_action_codes = tribble(
+  ~action_code, ~action_code_desc,
+  "1000", "Introduced in House",
+  "Intro-H", "Introduced in House",
+  "10000", "Introduced in Senate",
+  "B00100", "Sponsor introductory remarks on measure",
+  "H11100", "Referred to Committee",
+  "H11210", "Committee granted an extension for further consideration"
+))
+```
+
+### Missing code
+
+For actions without a code, can we can we infer a description for the action similar to action codes?
+Below I count the instances of `action_text` to see which occur most often. 
+
+```{r}
+(intro_actions_missing_code = intro_actions %>% 
+  # Filter actions with action codes but no action description
+  filter(is.na(action_code))) %>% 
+  count(action_text, sort = T)
+```
+
+These seem to be senate bill introduction and committee referral actions. We can verify where they're coming from with the action source name.
+
+```{r}
+intro_actions_missing_code %>% 
+  count(action_source_name, sort = T)
+```
+
+::: callout-caution
+#### Assumption
+
+The differences between "Read the second time and referred to the Committee..." and "Read twice and referred to the Committee..." are not vitally important and can be combined.\
+To verify this, I will look into the meaning of a bill being read a second time in the Senate.\
+Potentially check [here](https://www.govinfo.gov/content/pkg/CDOC-110hdoc49/pdf/CDOC-110hdoc49.pdf)
+:::
+
+The actions can be grouped into the following:
+
+-   Read the second time and referred
+
+-   Read twice and referred to committee
+
+-   Received in the Senate
+
+    -   Read twice
+
+    -   Read twice and referred
+
+-   Referred to committee
+
+Split the actions with no codes into two categories using regex:
+
+-   Referred to Committee
+
+-   Received in the Senate
+
+```{r}
+intro_actions_missing_code %>%
+  # Assign actions to category based on their text
+  mutate(action_desc = case_when(
+    str_detect(action_text, "[Rr]eferred to the (Select\\s)?Committee") ~ "Referred to Committee",
+    str_detect(action_text, "Received in the Senate") ~ "Received in the Senate"
+  )) %>% 
+  count(action_desc, sort = T)
+```
+
+Join our action codes to intro actions and fill in missing descriptions using the above regex.
+
+```{r}
+(intro_actions_coded = intro_actions %>%
+  # Join action codes
+  left_join(intro_action_codes, by = "action_code") %>% 
+  # Assign actions to category based on their text when missing action code
+  mutate(action_code_desc = case_when(
+    !is.na(action_code_desc) ~ action_code_desc,
+    str_detect(action_text, "[Rr]eferred to the (Select\\s)?Committee") ~ "Referred to Committee",
+    str_detect(action_text, "Received in the Senate") ~ "Received in the Senate"
+  ))) %>% 
+  count(action_code, action_code_desc)
+```
+
+```{r}
+#| eval: false
+(actions_intro_coded = actions_intro_dedupe %>% 
+    # Create action category variable
+  mutate(action_cat = case_when(
+    !is.na(action_desc) ~ action_desc,
+    # Specify coded actions
+    action_code == "B00100" ~ "Sponsor introductory remarks",
+    action_code == "H11100" ~ "Referred to committee",
+    action_code == "H11210" ~ "House committee granted an extension for further consideration",
+    # Specify uncoded actions
+    str_detect(action_text, "Referred to the Committee") ~ "Referred to committee",
+    str_detect(action_text, "^Read (twice|the second time) and referred") ~ "Read twice and referred to committee",
+    str_detect(action_text, "Received in the Senate and Read twice and referred") ~ "Received in the Senate, read twice, and referred to committee",
+    str_detect(action_text, "Received in the Senate and referred") ~ "Received in the Senate and referred to committee",
+    action_type == "IntroReferral" ~ action_text
+  ))) %>% 
+  count(action_cat, sort = T)
+```
+
+## Committee
+
+What actions do we have for committees?
+
+```{r}
+(committee_actions = actions_joined %>% 
+  filter(action_type == "Committee")) %>% 
+  glimpse(80)
+```
+
+What data is missing for committee actions?
+
+```{r}
+committee_actions %>% 
+  # Count missing obs for each variable
+  summarise(across(everything(), ~sum(is.na(.))),
+            n = n()) %>% 
+  # Pivot all except n
+  pivot_longer(-n, names_to = "column", values_to = "n_missing") %>% 
+  # Calc % missing
+  mutate(pct_missing = n_missing/n) %>% 
+  arrange(desc(pct_missing))
+```
+
+Action codes are missing 85% of the time, while descriptions are missing 90% of the time.
+
+An important aspect of cleaning the actions data is to identify the following:
+
+1.  What actions are coded and how many actions are missing codes?
+2.  How many actions are coded but missing code descriptions?
+3.  Can we derive a code description for action codes based on the action text?
+4.  For actions without a description or code, can we derive a code/category based on the action text?
+5.  Are there any duplicated data?
+
+What codes do we have?
+
+```{r}
+count(committee_actions, action_code, action_desc, sort = T)
+```
+
+How many actions are coded?
+
+```{r}
+nrow(committee_actions[!is.na(committee_actions$action_code),])
+```
+
+How many actions are coded but missing descriptions?
+
+```{r}
+nrow(committee_actions[!is.na(committee_actions$action_code)&is.na(committee_actions$action_desc),])
+```
+
+### Missing description
+
+The majority of committee actions don't have action codes. We also have 3 action codes which aren't in the codes provided by govinfo.
+
+Can we tell what they are?
+
+```{r}
+committee_actions %>% 
+  # Filter actions with action codes but no action description
+  filter(!is.na(action_code), is.na(action_desc)) %>% 
+  select(action_code, action_text, bill_id, action_date, everything()) %>% 
+  arrange(action_code, bill_id) %>% 
+  group_split(action_code)
+```
+
+`H12200` and `H12100` look similar but might not be identical. `H12200` denotes actions reported by a committee (sometimes amended), while `H12100` denotes committees reporting an original measure.
+
+Do bills have both?
+
+```{r}
+committee_actions %>% 
+  filter(action_code %in% c("H12200", "H12100")) %>% 
+  add_count(bill_id) %>% 
+  count(n)
+```
+
+Nope, bills only ever have one or the other so they're likely distinct actions. What about `H12210`?
+
+Below is a table of action codes and a code description, either provided by govinfo or inferred by me.
+
+| Action Code | Code Description                          | Provided |
+|-------------|-------------------------------------------|----------|
+| `14000`     | Reported to Senate                        | X        |
+| `14500`     | Senate committee discharged               | X        |
+| `5000`      | Reported to House                         | X        |
+| `5500`      | House committee discharged                | X        |
+| `H12100`    | House committee reported original measure |          |
+| `H12200`    | Reported or amended by committee          |          |
+| `H12210`    | Supplemental report filed                 |          |
+
+: Committee Action Codes
+
+```{r}
+(committee_action_codes = tribble(
+  ~action_code, ~action_code_desc,
+  "14000", "Reported to Senate",
+  "14500", "Senate committee discharged",
+  "5000", "Reported to House",
+  "5500", "House committee discharged",
+  "H12100", "House committee reported original measure",
+  "H12200", "Reported or amended by committee",
+  "H12210", "Supplemental report filed"
+))
+```
+
+### Missing code
+
+In cases where the action does not have a code, can we come up with an action subtype that is somewhat equivalent to action codes?
+
+```{r}
+committee_actions %>% 
+  filter(is.na(action_code)) %>% 
+  count(action_text, sort = T)# %>% 
+  # View("committee action texts")
+```
+
+Committee actions which do not have an action code include the following types of actions:
+
+-   Referred to Subcommittee
+
+-   Committee/Subcommittee Hearings Held
+
+-   Ordered to be Reported
+
+    -   in the Nature of a Substitute
+
+    -   by Voice Vote/Unanimous Consent/the Yeas and Nays
+
+-   Subcommittee Consideration and Mark-up Session Held
+
+-   Subcommittee discharged
+
+-   Forwarded by Subcommittee to Full Committee by Voice Vote
+
+-   Executive Comment Requested/Received
+
+Before we categorize the actions without an action code, join the action descriptions we outlined above.
+
+```{r}
+committee_actions_joined = committee_actions %>% 
+  left_join(committee_action_codes, by = "action_code")
+```
+
+```{r}
+(committee_actions_coded = committee_actions_joined %>% 
+  mutate(action_code_desc = case_when(
+    !is.na(action_code_desc) ~ action_code_desc,
+    str_detect(action_text, 
+               "Referred to the Subcommittee") ~ "Referred to subcommittee",
+    str_detect(action_text,
+               "Ordered to be reported without amendment") ~ "Ordered to be reported without amendment",
+    str_detect(action_text, 
+               "Ordered to be reported with an amendment in the nature of a substitute") ~ "Ordered to be reported with an amendment in the nature of a substitute",
+    str_detect(action_text,
+               "Ordered to be [Rr]eported (\\(Amended\\)|with (an )?amendments?)") ~ "Ordered to be reported (amended)",
+    str_detect(action_text,
+               "Ordered to be Reported in the Nature of a Substitute") ~ "Ordered to be reported in the nature of a substitute",
+    str_detect(action_text,
+               "Ordered to be [Rr]eported") ~ "Ordered to be reported",
+    str_detect(action_text,
+               "[Rr]eported(\\sby Senator [A-z\\s0-9\\/]+)? with (an )?amendments?") ~ "Reported with amendment(s)",
+    str_detect(action_text,
+               "[Rr]eported(\\sby Senator [A-z\\s0-9\\/]+)? without amendment") ~ "Reported without amendment",
+    str_detect(action_text, 
+               "Original measure reported to Senate") ~ "Original measure reported to Senate",
+    str_detect(action_text, 
+               "Subcommittee(\\son\\s[A-z\\s\\,]+\\.)? Hearings [Hh]eld\\.") ~ "Subcommittee Hearings held",
+    str_detect(action_text,
+               "Subcommittee (for|on) [A-z\\s\\,]+ held a hearing") ~ "Subcommittee Hearings held",
+    str_detect(action_text,
+               "^hearing held by Subcommittee [A-z\\s\\,]+") ~ "Subcommittee Hearings held",
+    str_detect(action_text, 
+               "Committee(\\son\\s[A-z\\s\\,\\']+\\.)? Hearings [Hh]eld\\.") ~ "Committee Hearings held",
+    str_detect(action_text, 
+               "Committee consideration held") ~ "Committee consideration held",
+    str_detect(action_text, 
+               "Committee [Cc]onsideration and Mark[\\s\\-]?[Uu]p") ~ "Committee Mark-up Session",
+    str_detect(action_text, 
+               "Subcommittee Consideration and Mark\\-up") ~ "Subcommittee Mark-up Session",
+    str_detect(action_text,
+               "Failed to report favorably") ~ "Failed to report favorably",
+    str_detect(action_text,
+               "Executive Comment Received") ~ "Executive comment received",
+    str_detect(action_text,
+               "Executive Comment Requested") ~ "Executive comment requested",
+    str_detect(action_text,
+               "Forwarded by Subcommittee to Full Committee") ~ "Forwarded to full committee",
+    str_detect(action_text,
+               "Subcommittee (.+) Discharged\\.$") ~ "Subcommittee discharged",
+    str_detect(action_text, 
+               "Senator.+filed written report") ~ "Senator filed written report",
+    # str_detect(action_text, "Ordered to be reported without amendment favorably") ~ "Ordered to be reported without amendment favorably.",
+    T ~ action_text
+  ))) %>% 
+  # filter(is.na(action_code_desc)) %>% 
+  # select(action_text, everything()) %>% View("Missing code desc")
+  count(action_code_desc, sort = T)
+  # Check cases which are not matched
+  # filter(is.na(action_desc)) %>% 
+  # count(action_text, sort = T)
+```
+
+The iterative process that I used to come up with these categories looked something like this:
+
+```{r}
+#| eval: false
+#| echo: true
+
+# 1. Look at the actions which don't have codes
+committee_actions %>% 
+  left_join(committee_action_codes, by = "action_code") %>% 
+  mutate(action_code_desc = case_when(
+    !is.na(action_code_desc) ~ action_code_desc,
+    T ~ NA_character_)
+    ) %>% 
+  filter(is.na(action_code_desc)) %>% 
+  select(action_text, everything()) %>% View("Missing code desc")
+
+# 2. Determine regex pattern to group related action texts
+committee_actions %>% 
+  left_join(committee_action_codes, by = "action_code") %>% 
+  mutate(action_code_desc = case_when(
+    !is.na(action_code_desc) ~ action_code_desc,
+    # Add new cases
+    str_detect(action_text, 
+               "Referred to the Subcommittee") ~ "Referred to subcommittee",
+    T ~ NA_character_)
+    ) %>% 
+  # Check the results matched by the new case regex
+  filter(action_code_desc == "Referred to subcommittee") %>% 
+  # After confirming, go back to missing cases
+  # filter(is.na(action_code_desc)) %>% 
+  select(action_text, everything()) %>% View("Missing code desc")
+```
+
+View data for the bill with the most committee actions
+
+```{r}
+committee_actions_coded %>% 
+  add_count(bill_id) %>% 
+  filter(n == max(n)) %>% 
+  arrange(action_date) %>% View("Example committee actions bill")
+```
+
+## Floor
+
+```{r}
+#| label: floor-action-codes
+(floor_actions = actions_joined %>% 
+  filter(action_type == "Floor")) %>% 
+  glimpse(80)
+```
+
+Where are floor data coming from?
+
+```{r}
+floor_actions %>% 
+  count(action_source_name, sort = T)
+```
+
+What data is missing for floor actions?
+
+```{r}
+floor_actions %>% 
+  # Count missing obs for each variable
+  summarise(across(everything(), ~sum(is.na(.))),
+            n = n()) %>% 
+  # Pivot all except n
+  pivot_longer(-n, names_to = "column", values_to = "n_missing") %>% 
+  # Calc % missing
+  mutate(pct_missing = n_missing/n) %>% 
+  arrange(desc(pct_missing))
+```
+
+What action codes do we have?
+
+```{r}
+count(floor_actions, action_code, action_desc, sort = T)
+```
+
+How many actions are coded?
+
+```{r}
+nrow(floor_actions[!is.na(floor_actions$action_code),])
+```
+
+How many actions are coded but missing descriptions?
+
+```{r}
+nrow(floor_actions[!is.na(floor_actions$action_code)&is.na(floor_actions$action_desc),])
+```
+
+That is a lot of action codes with not a lot of descriptions.
+
+### Missing description
+
+```{r}
+floor_actions %>% 
+  # Filter actions with action codes but no action description
+  filter(!is.na(action_code), is.na(action_desc)) %>% 
+  count(action_code, action_text) %>% 
+  arrange(action_code, desc(n))# %>% 
+  # View("Floor Action Codes")
+```
+
++-------------+----------------------------------------------------------------------------------------------+----------+
+| Action Code | Action                                                                                       | Provided |
++=============+==============================================================================================+==========+
+| `17000`     | Passed/agreed to in Senate                                                                   | X        |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `8000`      | Passed/agreed to in House                                                                    | X        |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `9000`      | Failed of passage/not agreed to in House                                                     | X        |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `E20000`    | Presented to President                                                                       |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H12700`    | Provision of consideration and/or debate                                                     |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H1B000`    | Pursuant to provisions of H. Res. 41/85/330/380/403/473/486/504/ 535/601/912, resolution is: |          |
+|             |                                                                                              |          |
+|             | -   considered passed House                                                                  |          |
+|             |                                                                                              |          |
+|             | -   considered vacated                                                                       |          |
+|             |                                                                                              |          |
+|             | -   laid on the table                                                                        |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H1L210`    | Rules committee resolution reported to house                                                 |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H1L220`    | Rule passed House                                                                            |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H14000`    | Received in the House                                                                        |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H15000`    | Held at the desk                                                                             |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H30000`    | Considered:                                                                                  |          |
+|             |                                                                                              |          |
+|             | -   as privileged matter                                                                     |          |
+|             |                                                                                              |          |
+|             | -   as unfinished business                                                                   |          |
+|             |                                                                                              |          |
+|             | -   by unanimous consent                                                                     |          |
+|             |                                                                                              |          |
+|             | -   under suspension of the rules                                                            |          |
+|             |                                                                                              |          |
+|             | -   under provisions of rule H. Res. XXX                                                     |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H30200`    | -   Request for unanimous consent to consider bill                                           |          |
+|             |                                                                                              |          |
+|             | -   Chair lays bill before the House w/o objection                                           |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H30300`    | Move to suspend rules and pass the bill/agree to the resolution                              |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H30800`    | Consideration initiated                                                                      |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H35000`    | Previous question ordered:                                                                   |          |
+|             |                                                                                              |          |
+|             | -   pursuant to the rule                                                                     |          |
+|             |                                                                                              |          |
+|             | -   pursuant to a previous order of the House                                                |          |
+|             |                                                                                              |          |
+|             | -   agreed to by vote                                                                        |          |
+|             |                                                                                              |          |
+|             | -   without objection                                                                        |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H36100`    | Move to commit w/instructions to a Select committee                                          |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H36110`    | Failed move to commit w/instructions                                                         |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H36200`    | Move to recommit to committee                                                                |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H36210`    | Failed move to recommit to committee                                                         |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H36500`    | Move to table the measure                                                                    |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H36510`    | Passed move to table the measure                                                             |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H36600`    | Move to:                                                                                     |          |
+|             |                                                                                              |          |
+|             | -   reconsider                                                                               |          |
+|             |                                                                                              |          |
+|             | -   table motion to reconsider                                                               |          |
+|             |                                                                                              |          |
+|             | -   agree                                                                                    |          |
+|             |                                                                                              |          |
+|             | -   postpone consideration                                                                   |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H36610`    | Passed move to:                                                                              |          |
+|             |                                                                                              |          |
+|             | -   reconsider                                                                               |          |
+|             |                                                                                              |          |
+|             | -   table motion to reconsider                                                               |          |
+|             |                                                                                              |          |
+|             | -   agree                                                                                    |          |
+|             |                                                                                              |          |
+|             | -   postpone consideration                                                                   |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H36700`    | Move to refer to a select committee                                                          |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H37100`    | Passage of/agreeing to resolution                                                            |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H37220`    | Vote demanded at conclusion of debate                                                        |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H37300`    | Vote on motion to suspend the rules and pass the bill /                                      |          |
+|             |                                                                                              |          |
+|             | Passage of bill under suspension of rules                                                    |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H38310`    | Motion to reconsider laid on the table                                                       |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H38400`    | Move to reconsider vote                                                                      |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H38410`    | Vote on motion to reconsider                                                                 |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H38800`    | Measure title amended                                                                        |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H38900`    | Clerk authorized to make technical and formatting corrections                                |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H8A000`    | Previous question on the motion was ordered                                                  |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+| `H8D000`    | Debate                                                                                       |          |
++-------------+----------------------------------------------------------------------------------------------+----------+
+
+: Floor Action Codes
+
+```{r}
+floor_action_codes = tribble(
+  ~action_code, ~action_desc,
+  "17000", "Passed/agreed to in Senate",
+  "8000", "Passed/agreed to in House",
+  "9000", "Failed of passage/not agreed to in House",
+  "E20000", "Presented to President",
+  "H12700", "Provision of consideration and/or debate",
+  "H1L210", "Rules committee resolution reported to House",
+  "H1L220", "Rule passed House",
+  "H35000", "Previous question ordered",
+  "H30000", "Bill considered",
+  "H30300", "Move to suspend rules and pass the bill/agree to the resolution",
+  "H30800", "Consideration initiated",
+  "H36100", "Move to commit w/instructions to a Select committee",
+  "H36110", "Failed to commit w/instructions",
+  "H36200", "Move to recommit to committee",
+  "H36210", "Failed move to recommit",
+  "H36500", "Move to table the measure",
+  "H36510", "Passed move to table measure",
+  "H37100", "Passage of/agreeing to resolution",
+  "H37220", "Vote demanded at conclusion of debate",
+  "H37300", "Vote on motion to suspend the rules and pass the bill / Passage of bill under suspension of rules",
+  "H38310", "Motion to reconsider laid on the table",
+  "H38400", "Move to reconsider vote",
+  "H38800", "Measure title amended",
+  "H38900", "Clerk authorized to make technical and formatting corrections",
+  "H8A000", "Previous question on the motion was ordered",
+  "H8D000", "Debate"
+)
+```
+
+Even within action code, there appears to be different actions in some cases
+
+```{r}
+floor_ambiguous_action_codes = c("H1B000", "H12700", "H30000", "H30200", "H36600", "H36610", "H8D000")
+
+floor_actions %>% 
+  filter(action_code %in% floor_ambiguous_action_codes) %>% 
+  select(action_text, action_code, everything()) %>% 
+  group_split(action_code)
+```
+
+### Missing code
+
+```{r}
+#| label: floor-missing-codes
+floor_actions %>% 
+  filter(is.na(action_code)) %>% 
+  count(action_text, sort = T)# %>% 
+  # View("Floor Actions missing codes")
+```
+
+Floor actions which do not have an action code appear to be Senate actions, but include the following types of actions:
+
+-   Message on Senate action sent to the house
+
+-   Passed Senate w/o amendment by Unanimous Consent/Voice Vote
+
+-   Passed Senate with amendment
+
+-   Cloture motion
+
+    -   on the measure
+
+    -   on the motion to proceed to the measure
+
+    -   invoked/not invoked
+
+-   Motion to proceed to consideration of measure in Senate
+
+-   Motion to proceed to consideration of measure *agreed to* in Senate
+
+-   Received, considered, and agreed to in the senate
+
+-   Considered by Senate
+
+-   Measure laid before Senate (by motion/unanimous consent)
+
+-   Motion to commit to Senate Committee
+
+-   Motion to appeal the ruling of the chair
+
+-   Motion to reconsider cloture vote
+
+`E20000` is the same as the `28000` action code under the President action type\\
+
+## Discharge
+
+```{r}
+#| label: discharge-action-codes
+discharge_actions = actions_joined %>% 
+  filter(action_type == "Discharge")
+```
+
+Where are discharge data coming from?
+
+```{r}
+discharge_actions %>% 
+  count(action_source_name, sort = T)
+```
+
+```{r}
+discharge_actions %>% 
+  # Count missing obs for each variable
+  summarise(across(everything(), ~sum(is.na(.))),
+            n = n()) %>% 
+  # Pivot all except n
+  pivot_longer(-n, names_to = "column", values_to = "n_missing") %>% 
+  # Calc % missing
+  mutate(pct_missing = n_missing/n) %>% 
+  arrange(desc(pct_missing))
+```
+
+What action codes do we have?
+
+```{r}
+discharge_actions %>% 
+  count(action_code, action_desc, sort = T)
+```
+
+### Missing description
+
+```{r}
+discharge_actions %>% 
+  # Filter actions with action codes but no action description
+  filter(!is.na(action_code), is.na(action_desc)) %>% 
+  count(action_code, action_text) %>% 
+  arrange(action_code, desc(n))# %>% 
+  # View("Discharge Action Codes")
+```
+
+```{r}
+#| label: discharge-actions
+discharge_actions %>% 
+  add_count(action_code, name = "action_code_count") %>% 
+  # Select distinct action codes and their descriptions
+  distinct(action_code, action_code_count,
+           action_desc, action_text_trunc = str_trunc(action_text, width = 60),
+           action_text) %>%
+  # sort by frequency
+  arrange(desc(action_code_count), action_code) %>% 
+  head()# %>% 
+  # View("Discharge Action Codes")
+
+```
+
+| Action Code | Action                         | Given/Inferred |
+|-------------|--------------------------------|----------------|
+| `H12300`    | Committee discharged           | Inferred       |
+| `H17000`    | Motion to discharge committee  | Inferred       |
+| `H12490`    | Discharged from House Calendar | Inferred       |
+
+: Discharge Action Codes
+
+## President
+
+```{r}
+#| label: president-action-codes
+president_actions = actions_joined %>% 
+  filter(action_type == "President")
+```
+
+Where are president data coming from?
+
+```{r}
+president_actions %>% 
+  count(action_source_name, sort = T)
+```
+
+```{r}
+president_actions %>% 
+  # Count missing obs for each variable
+  summarise(across(everything(), ~sum(is.na(.))),
+            n = n()) %>% 
+  # Pivot all except n
+  pivot_longer(-n, names_to = "column", values_to = "n_missing") %>% 
+  # Calc % missing
+  mutate(pct_missing = n_missing/n) %>% 
+  arrange(desc(pct_missing))
+```
+
+What action codes do we have?
+
+```{r}
+president_actions %>% 
+  count(action_code, action_desc, sort = T)
+```
+
+### Missing description
+
+```{r}
+president_actions %>% 
+  # Filter actions with action codes but no action description
+  filter(!is.na(action_code), is.na(action_desc)) %>% 
+  count(action_code, action_text) %>% 
+  arrange(action_code, desc(n))# %>% 
+  # View("Discharge Action Codes")
+```
+
+```{r}
+#| label: president-actions
+president_actions %>% 
+  add_count(action_code, name = "action_code_count") %>% 
+  # Select distinct action codes and their descriptions
+  distinct(action_code, action_code_count,
+           action_desc, action_text_trunc = str_trunc(action_text, width = 60),
+           action_text) %>%
+  # sort by frequency
+  arrange(desc(action_code_count), action_code) %>% 
+  head()# %>% 
+  # View("President Action Codes")
+```
+
+| Action Code | Action                 | Provided |
+|-------------|------------------------|----------|
+| `28000`     | Presented to President | X        |
+| `E30000`    | Signed by President    |          |
+| `E40000`    | Became Public Law      |          |
+
+: President Action Codes
+
+## Became Law
+
+```{r}
+#| label:  becamelaw-action-codes
+actions_joined %>% 
+  filter(action_type == "BecameLaw") %>% 
+  count(action_source_name, action_code, sort = T)
+
+```
+
+```{r}
+#| label: becamelaw-actions
+actions_joined %>% 
+  filter(action_type == "BecameLaw") %>% 
+  add_count(action_code, name = "action_code_count") %>% 
+  # Select distinct action codes and their descriptions
+  distinct(action_code, action_code_count,
+           action_desc, action_text_trunc = str_trunc(action_text, width = 60),
+           action_text) %>%
+  # sort by frequency
+  arrange(desc(action_code_count), action_code) %>% 
+  head()# %>% 
+  # View("Became Law Action Codes")
+```
+
+| Action Code | Action            | Given/Inferred |
+|-------------|-------------------|----------------|
+| `36000`     | Became Public Law | Given          |
+
+: Became Law Action Codes
+
+## Unspecified Action Type
+
+```{r}
+#| label:  missing-actions
+actions_joined %>% 
+  filter(action_type == "(Missing Action Type)") %>% 
+  count(action_source_name, action_code) %>% 
+  arrange(action_code, desc(n))
+
+```
+
+```{r}
+#| label:  missing-action-codes
+actions_joined %>% 
+  filter(action_type == "(Missing Action Type)") %>% 
+  add_count(action_code, name = "action_code_count") %>% 
+  # Select distinct action codes and their descriptions
+  distinct(action_source_name, action_code, action_code_count,
+           action_desc, action_text_trunc = str_trunc(action_text, width = 60),
+           action_text) %>%
+  # sort by frequency
+  arrange(desc(action_code_count), action_code) %>% 
+  head()# %>% 
+  # View("Missing Type Action Codes")
+```
+
++-------------+-----------------------------------------------------------------------------------+----------------+
+| Action Code | Action                                                                            | Given/Inferred |
++=============+===================================================================================+================+
+| `H12410`    | Placed on the Union Calendar                                                      | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
+| `H12420`    | Placed on the House Calendar                                                      | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
+| `H41931`    | Result of motion to reconsider                                                    | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
+| `19500`     | Resolving differences                                                             | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
+| `H41610`    | Result of motion that the House agree to Senate amendment                         | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
+| `H82000`    | Move to table motion to reconsider/postpone consideration/refer                   | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
+| `H12440`    | Motion to place bill on consensus calendar                                        | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
+| `H41400`    | Previous question ordered pursuant to rule/previous House order                   | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
+| `H12430`    | Placed on the Private Calendar                                                    | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
+| `H40110`    | Request unanimous consent that the House to agree to Senate amendment(s)          | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
+| `H40140`    | Move to suspend rules and agree to Senate amendment(s)                            | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
+| `H40150`    | Move that the House agree to Senate amendment(s)                                  | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
+| `80000`     | Amendment failed by the House                                                     | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
+| `H30230`    | An objection was heard to the unanimous consent request to consider the measure.  | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
+| `H40130`    | House moved to agree to the Senate amendment, pursuant to previous special order. | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
+| `H41930`    | Move to reconsider the vote                                                       | Inferred       |
++-------------+-----------------------------------------------------------------------------------+----------------+
+
+: Missing Action Type Action Codes
+
+
+
+
+
+# Remove Duplicates
+
+## Intro/Referral actions
+
+Use `janitor::get_dupes()` with all variables except code-related variables and source system variables to identify duplicate actions.
+
+```{r}
+(intro_dupes = get_dupes(intro_actions_coded,
+                         action_text, bill_id, action_date, action_time,
+                         action_committee_system_code,
+                         action_committee_name))
+```
+
+```{r}
+intro_dupes %>% 
+  count(action_code, wt = dupe_count, sort = T)
+```
+
+The `action_code`s **1000** and **Intro-H** seem to be duplicates. Let's look at them.
+
+::: callout-note
+### Assumption
+
+A bill being received in the Senate is different than being introduced in the Senate.\
+If this is incorrect, we may need to deduplicate those too.
+:::
+
+```{r}
+#| label: compare-intro
+actions_to_compare = c("1000", "Intro-H")
+
+# Filter to 1000 and Intro-H action codes
+(compare_intro_actions = intro_actions_coded %>% 
+  filter(action_code %in% actions_to_compare)) %>% 
+  glimpse(width = 80)
+```
+
+How many bills are in this subset of actions?
+
+```{r}
+n_distinct(compare_intro_actions$bill_id)
+```
+
+How many of these two actions do bills have?
+
+```{r}
+compare_intro_actions %>% 
+  count(bill_id, wt = n_distinct(action_code), name = "code_count") %>% 
+  count(code_count, name = "bills")
+```
+
+Nearly all bills have both actions, with a very small amount of bills only having one action. Which code is on more bills?
+
+```{r}
+compare_intro_actions %>% 
+  # Count bills action codes occur on
+  count(action_code, wt = n_distinct(bill_id), name = "bills")
+```
+
+`1000` is on every bill.
+
+```{r}
+compare_intro_actions %>% 
+  group_by(bill_id) %>% 
+  # Identify which action codes are present for each bill
+  mutate(actions_present = case_when(
+    all(actions_to_compare %in% action_code) ~ "Both",
+    "1000" %in% action_code ~ "1000 only",
+    "Intro-H" %in% action_code ~ "Intro-H only"
+  )) %>% 
+  ungroup() %>% 
+  # Count the different cases of actions present
+  count(actions_present, wt = n_distinct(bill_id), sort = T)
+```
+
+Yep, either `1000` is present or both are.
+
+When bills have more than one action, is all the information identical other than the action code? To check this, I count the different values in columns (excluding action code and code description) for each bill and filter to cases where any value is greater than 1.
+
+```{r}
+compare_intro_actions %>% 
+  add_count(bill_id) %>% 
+  # Filter to cases where both actions are present
+  filter(n == 2) %>% 
+  arrange(bill_id, action_code) %>% 
+  # Count the number of different values in non-code columns
+  group_by(bill_id) %>% 
+  summarise(across(c(-action_code, -action_desc), n_distinct), 
+            .groups = "drop") %>% 
+  # Filter to cases where any value is greater than 1
+  filter(if_any(where(is_integer), ~(. > 1)))
+```
+
+Check we have every bill after removing `Intro-H` actions.
+
+```{r}
+compare_intro_actions %>% 
+  # Remove Intro-H action codes (keep NAs)
+  filter(replace_na(action_code != "Intro-H", T)) %>% 
+  pull(bill_id) %>% 
+  n_distinct()
+```
+
+So we can remove `Intro-H` actions without losing any information or bills. This reduces the size of the actions data by thousands of rows.
+
+```{r}
+#| label: intro-code-dedupe
+(intro_actions_dedupe = intro_actions_coded %>% 
+  # Remove Intro-H action codes (keep NAs)
+  filter(replace_na(action_code != "Intro-H", T)) %>% 
+  arrange(bill_id, action_date, action_time)) %>% 
+  glimpse(width = 80)
+```
+
+```{r}
+nrow(intro_actions_dedupe) - nrow(intro_actions)
+```
+
+## Committee
+
+Use `janitor::get_dupes()` with all variables except code-related variables and source system variables
+
+```{r}
+(committee_dupes = get_dupes(committee_actions,
+                         action_text, bill_id,action_date, action_time,
+                         action_committee_system_code,
+                         action_committee_name))
+```
+
+We can see the following:
+
+-   Code `14000` is the generic code for a bill being reported to the Senate coming from the Library of Congress, while the same actions coming from the Senate have a more descriptive code description inferred from the action text above
+
+-   Code `5000` is a similarly generic code from the Library of Congress for a bill being reported to the House. In this case however, we have the more specific actions `H12100`, `H12200`, and `H12210` which come from the House floor actions source
+
+```{r}
+committee_dupes %>% 
+  count(action_code, wt = dupe_count, sort = T)
+```
+
+Interestingly, it seems counts of `H12200`, `H12100`, and `H12210` add up to counts of `5000`:
+
+```{r}
+committee_dupes %>% 
+  count(action_code, wt = dupe_count, sort = T) %>% 
+  filter(action_code %in% c("H12200", "H12100", "H12210")) %>% 
+  summarise(sum(n))
+```
+
+Look at bills with `H12210` actions, check if there is always a corresponding `5000` action with the same action text.
+
+```{r}
+committee_actions %>% 
+  group_by(bill_id) %>% 
+  filter("H12210" %in% action_code) %>% 
+  select(action_text, action_code, everything())# %>% 
+  # View("H12210 bills")
+```
+
+There is indeed.
+
+Now check `H12200` actions.
+
+```{r}
+committee_actions %>% 
+  group_by(bill_id) %>% 
+  filter("H12200" %in% action_code) %>% 
+  select(action_text, action_code, everything())# %>% 
+  # View("H12200 bills")
+```
+
+And lastly, I think it's also worth checking `H12100` actions since it seems likely the library of congress is recording each of these actions.
+
+```{r}
+committee_actions %>% 
+  group_by(bill_id) %>% 
+  filter("H12100" %in% action_code) %>% 
+  select(action_text, action_code, everything())# %>% 
+  # View("H12100 bills")
+```
+
+Yep we also have duplicates of this action. So `H12100`, `H12200`, and `H12210` are all duplicates of `5000`. Let's keep the `H12-` action codes because they more clearly distinguish the actions.
+
+What about the Reported to Senate actions without an action code that appears to be a duplicate of code `14000`
+
+```{r}
+committee_actions_coded %>% 
+  group_by(bill_id) %>% 
+  filter("14000" %in% action_code) %>% 
+  ungroup() %>% 
+  mutate(filter_cond = replace_na(!(action_code %in% c("5000", "14000")), T)) %>% 
+  select(action_text, action_code, filter_cond, everything()) %>% 
+  View("14000 actions")
+```
+
+So we can remove `5000` and `14000` actions without losing any information or bills. This reduces the size of the actions data by thousands of rows.
+
+```{r}
+#| label: committee-code-dedupe
+(committee_actions_dedupe = committee_actions_coded %>% 
+  # Remove 5000 and 14000 action codes (keep NAs)
+  filter(replace_na(!(action_code %in% c("5000", "14000")), T)) %>% 
+  # filter(replace_na(!(action_code == "5000"), T),
+  #        action_code_desc != "Original measure reported to Senate") %>% 
+  arrange(bill_id, action_date, action_time)) %>% 
+  glimpse(width = 80)
+```
+
+## Floor
+
+```{r}
+glimpse(floor_actions, width = 80)
+```
+
+```{r}
+(floor_dupes = get_dupes(floor_actions,
+                         action_text, bill_id,action_date, action_time,
+                         action_committee_system_code,
+                         action_committee_name))
+```
+
+## Discharge
+
+```{r}
+(discharge_dupes = get_dupes(discharge_actions,
+                         action_text, bill_id,action_date, action_time,
+                         action_committee_system_code,
+                         action_committee_name))
+```
+
+
+
+
+
+
+
+
+
+
+# Order of (legislative) operations
+
+What is the chronological order of legislative actions? Based on this [map of legislative status steps](https://www.loc.gov/pictures/resource/ppmsca.33996/), it is not entirely straightforward. `action_date` and `action_time` are two fields which should provide some insight here. Unfortunately, `action_time` is missing in 90% of cases.
+
+```{r}
+# Calculate how many actions are missing date and time data
+actions_unnested %>% 
+  summarise(
+    n_actions = n(),
+    across(c(action_date, action_time), 
+           list(data_points = ~scales::comma(sum(!is.na(.), na.rm = T)), 
+                pct = ~scales::percent(sum(!is.na(.), na.rm = T)/n_actions, accuracy = .01)))
+  ) %>% 
+  # Pivot summary for table
+  pivot_longer(cols = starts_with("action"), 
+               names_to = c("field", ".value"), names_sep = "(?<=e)_")
+```
+
+Because time information is missing and often actions of different types occur on the same day, we need to make use `action_type` to identify the order of actions.
+
+## Assumption
+
+Congressional actions follow the following order:\
+Intro/Referral -\> Committee -\> Discharge -\> Floor -\> President -\> Become Law
+
+Because actions can occur on the same date and we do not know the time, this assumption is useful to infer the order of actions.
+
+```{r}
+actions_order = c("IntroReferral", "Committee", 
+                  "Discharge", "Floor", "President", "BecameLaw")
+```
+
+Let's see an example of a case where different action types have the same date with no time information:
+
+```{r}
+#| label: actions-example
+#| column: page
+unclear_action_example = actions_unnested %>% 
+  filter(bill_id == "HR-1002") %>% 
+  arrange(action_date, action_time)
+
+unclear_action_example %>% 
+  select(action_date, action_time, action_type, action_text) %>% 
+  reactable(theme = moke_rt(),
+            columns = list(
+              "action_text" = colDef(width = 264)
+            )) %>% 
+  add_title(unique(unclear_action_example$title)) %>% 
+  add_subtitle("Example of ambiguous congressional action order")
+```
+
+```{r}
+
+(actions_coded = actions_unnested %>% 
+    # Create action timestamp
+    mutate(action_ts = make_datetime(year = year(action_date), 
+                                     month = month(action_date), 
+                                     day = day(action_date), 
+                                     hour = coalesce(hour(action_time), 0), 
+                                     min = coalesce(minute(action_time), 0), 
+                                     sec = coalesce(second(action_time), 0), 
+                                     tz = "US/Eastern"),
+           # Set action type order
+           action_type_fct = fct_explicit_na(
+             factor(action_type, 
+                    levels = actions_order, 
+                    ordered = T),
+             na_level = "(Missing Action Type)"
+           ),
+           action_source_name = factor(action_source_name,
+                                       levels = c("Library of Congress", 
+                                                  "House floor actions", 
+                                                  "House committee actions",
+                                                  "Senate"),
+                                       ordered = T)) %>% 
+    arrange(bill_id, action_ts) %>% 
+    select(-action_date, action_time) %>% 
+    relocate(action_ts, action_type, action_text, 
+                    action_code, action_type_fct,
+                    action_source_name, action_source_code,
+                    starts_with("action_committee"), .after = title)) %>% 
+  select(title, bill_id, starts_with("action"))
+```
+
+What action types are most common?
+
+```{r}
+#| label: count-action-type
+actions_coded %>%
+  count(bill_type, action_type) %>% 
+  arrange(bill_type, desc(n)) %>% 
+  pivot_wider(names_from = action_type, values_from = n, values_fill = 0)
+```
+
+Or in a graph:
+
+```{r}
+#| label: action-type-prop
+#| fig.width: 10
+#| fig.height: 6
+actions_coded %>%
+  count(bill_type, action_type) %>% 
+  arrange(bill_type, n) %>% 
+  # Calculate % of bill's actions
+  group_by(bill_type) %>% 
+  mutate(pct = n/sum(n),
+         pct_lab = if_else(pct > .08, scales::percent(pct, accuracy = .1), NA_character_)) %>% 
+  ungroup() %>%
+  # Plot
+  ggplot(., aes(y = bill_type, fill = fct_rev(action_type)))+
+  geom_col(aes(x = n), 
+           colour = my_col_pal[1], width = .6, 
+           position = position_fill())+
+  geom_text(aes(x = n, label = pct_lab), 
+           position = position_fill(vjust = .5),
+           family = "Heebo Light", fontface = "bold",
+           colour = my_col_pal[1],
+           size = 5)+
+  scale_x_continuous(name = NULL, 
+                     labels = scales::percent, 
+                     breaks = scales::breaks_pretty(),
+                     expand = expansion(add = .01))+
+  scale_fill_manual(name = "Action\nType", 
+                    values = viz_colours[length(unique(actions_unnested$action_type)):1],
+                    guide = guide_legend(title.position = "left", 
+                                         title.hjust = .5,
+                                         label.position = "top", 
+                                         keywidth = unit(2.5, "cm"),
+                                         #direction = "horizontal", 
+                                         nrow = 1, reverse = T))+
+  labs(title = "Most common congressional actions taken on bills",
+       subtitle = "Actions as proportion of total bill activity, by bill type",
+       y = NULL)+
+  # facet_wrap(~bill_type, scales = "free_y")+
+  theme_moke(plot_margin = margin(20,20,20,20))+
+  # theme_minimal()+
+  theme(legend.position = "top",
+        axis.line.y = element_blank(),
+        legend.title = element_text(margin = margin(l = 0, r = 20)),
+        legend.box.just = "left",
+        panel.grid.major.y = element_blank(), 
+        panel.grid.major.x = element_line())
+```
+
+Can we get an idea of the order of actions based on their average position in the data?
+
+```{r}
+#| label:  action-order-summary
+#| eval: false
+(action_order_summary = actions_coded %>% 
+  group_by(bill_type, action_type) %>% 
+  summarise(across(action_number, list(min = min, 
+                                       y25 = ~quantile(., .25), 
+                                       mean = mean, median = median, 
+                                       y75 = ~quantile(., .75),
+                                       max = max), na.rm=T)))
+```
+
+```{r}
+#| label:  action-order-boxplot
+#| eval: false
+action_order_summary %>%
+  pivot_longer(
+    cols = starts_with("action_n"), 
+    names_to = "measure", values_to = "value",
+    names_transform = list(
+      measure = ~str_remove_all(., "^action_number_")
+      )
+    )
+
+action_order_summary %>% 
+  ggplot(., aes(x = action_type))+
+  geom_boxplot(
+    aes(ymin = action_number_min, 
+        lower = action_number_y25, 
+        middle = action_number_median, 
+        upper = action_number_y75,
+        ymax = action_number_max),
+    stat = "identity"
+  )+
+  facet_wrap(~bill_type)+
+  theme_moke(plots_pane = T)+
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
+```
+
+```{r}
+#| label:  action-order-boxplot2
+#| eval: false
+actions_unnested %>% 
+  group_by(action_type) %>% 
+  mutate(mean_num = mean(action_number)) %>% 
+  ungroup() %>% 
+  arrange(mean_num) %>% 
+  mutate(action_type = fct_inorder(factor(action_type))) %>% 
+  ggplot(., aes(x = action_type, y = action_number))+
+  geom_boxplot()+
+  labs(title = "In what order do actions typically occur?", x = NULL)+
+  facet_wrap(~bill_type)+
+  theme_moke(plots_pane = T)
+
+```
+
+```{r}
+#| label:  sample-actions-plot
+actions_unnested %>% 
+  filter(bill_id == sample(bill_id, 1)) -> sample_bill_actions
+
+sample_bill_actions %>% 
+  # Plot
+  ggplot(., aes(x = action_date))+
+  # Line connecting points
+  geom_line(aes(y = ..count.., group = bill_id), stat = "count", size = .8, alpha = .8)+
+  # Points using the count of each action type on a given date
+  geom_point(aes(colour = action_type, size = ..count..), stat = "count")+
+  labs(title = "Bill actions over time", 
+       x = "Action Date", y = "# of actions")+
+  scale_size(guide = "none", range = c(2,7))+
+  theme_moke(plots_pane = T)
+```
