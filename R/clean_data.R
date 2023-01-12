@@ -1,3 +1,4 @@
+# Libraries
 library(extrafont)
 library(tictoc)
 library(furrr)
@@ -7,21 +8,31 @@ library(reactablefmtr)
 plan(multisession)
 source("R/parsing_functions.R")
 
-action_codes = read_csv(here("data", "action_codes.csv"), col_types = "cc")
+
+# Load data ---------------------------------------------------------------
 
 # Load cleaned R objects
 all_bills = readRDS(here("data", "cleaned", "BILLSTATUS_117_2022-11-10.Rds"))
 
-# Clean bills -------------------------------------------------------------
+# Action code mapping table from GovInfo
+# https://github.com/usgpo/bill-status/blob/main/BILLSTATUS-XML_User_User-Guide.md#3-action-code-element-possible-values
+action_codes = read_csv(here("data", "action_codes.csv"), col_types = "cc")
 
+
+# Prepare action data -------------------------------------------------------------
+
+# Select ID cols and unnest actions from nested data frames
 actions_unnested = select(all_bills, 
-       bill_id, title, bill_type, actions) %>% 
-  # Unnest actions
+                          bill_id, title, bill_type, actions) %>% 
   unnest(actions)
 
+# Join in action code descriptions
 actions_joined = actions_unnested %>% 
-  # Join actions to the list of action codes
   left_join(action_codes, by = "action_code")
+
+
+# Clean Intro/Referral actions --------------------------------------------
+
 
 intro_actions = actions_joined %>% 
   filter(action_type == "IntroReferral")
