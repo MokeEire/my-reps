@@ -59,7 +59,7 @@ intro_actions_coded = intro_actions %>%
 
 intro_actions_dedupe = intro_actions_coded %>% 
   # Remove Intro-H action codes (keep NAs)
-  filter(replace_na(action_code != "Intro-H", T)
+  filter(replace_na(action_code != "Intro-H", T))
 
 tic("Code all bills")
 all_bills_coded = mutate(all_bills,
