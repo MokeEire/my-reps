@@ -477,6 +477,13 @@ extract_bill_status = function(xml_file,
                                col_specs = attribute_col_types,
                                log_threshold = "INFO",
                                log_types = c("console")){
+  # When using Bill Type and Bill Number columns
+  # Before 117th congress: billType and billNumber
+  # 117th & After: type and number
+  # https://github.com/usgpo/bulk-data/issues/113#issuecomment-1366754669
+  # Additional changes:
+  # https://github.com/usgpo/bill-status/issues/200#issue-1333965229
+  
   # Create logger
   logger = create_logger(log_threshold = log_threshold, 
                          log_types = log_types)
@@ -533,18 +540,18 @@ extract_bill_status = function(xml_file,
   bill_df = bind_cols(bill_df, latest_action)
 
   log_debug(logger, 
-           bill_type = bill_df$billType,
-           bill_num = bill_df$billNumber,
+           bill_type = bill_df$type,
+           bill_num = bill_df$number,
            "Reading XML")
 
 
   # Committees ---------
   log_debug(logger, 
-           bill_type = bill_df$billType,
-           bill_num = bill_df$billNumber,
+           bill_type = bill_df$type,
+           bill_num = bill_df$number,
            "Parsing committees")
   
-  committees = xml_find_all(bill_xml, "//bill/committees/billCommittees/item")
+  committees = xml_find_all(bill_xml, "//bill/committees/item")
   
   if("committees" %in% nested_attributes && length(committees)>0){
 
@@ -560,51 +567,55 @@ extract_bill_status = function(xml_file,
   }
   
   # Votes ---------
-  log_debug(logger, 
-           bill_type = bill_df$billType,
-           bill_num = bill_df$billNumber,
-           "Parsing votes")
-  
-  votes_node = xml_find_all(bill_xml, "//bill/recordedVotes/recordedVote")
-  
-  if("votes" %in% nested_attributes && length(votes_node)>0 && get_votes){
-    
-    
-    # Coerce nodes to list
-    votes_list = as_list(votes_node)
-
-    votes_df = select(map_dfr(votes_list, flatten_dfc), -any_of(c("congress")))
-
-    # Add Vote tallies
-    vote_rolls_df = mutate(votes_df,
-                           vote_roll = map2(url, chamber, parse_vote_roll, 
-                             logger = logger, 
-                             bill_type = bill_df$billType,
-                             bill_num = bill_df$billNumber),
-             roll_found = map_lgl(vote_roll, ~(nrow(.) > 0))) %>% 
-      janitor::clean_names()
-    
-    bill_df$house_votes = list(filter(vote_rolls_df, chamber == "House"))
-    bill_df$senate_votes = list(filter(vote_rolls_df, chamber == "Senate"))
-  } else {
-    bill_df$house_votes = list(tibble())
-    bill_df$senate_votes = list(tibble())
-  }
+  # log_debug(logger, 
+  #          bill_type = bill_df$type,
+  #          bill_num = bill_df$number,
+  #          "Parsing votes")
+  # 
+  # votes_node = xml_find_all(bill_xml, "//bill/recordedVotes/recordedVote")
+  # 
+  # if("votes" %in% nested_attributes && length(votes_node)>0 && get_votes){
+  #   
+  #   
+  #   # Coerce nodes to list
+  #   votes_list = as_list(votes_node)
+  # 
+  #   votes_df = select(map_dfr(votes_list, flatten_dfc), -any_of(c("congress")))
+  # 
+  #   # Add Vote tallies
+  #   vote_rolls_df = mutate(votes_df,
+  #                          vote_roll = map2(url, chamber, parse_vote_roll, 
+  #                            logger = logger, 
+  #                            bill_type = bill_df$type,
+  #                            bill_num = bill_df$number),
+  #            roll_found = map_lgl(vote_roll, ~(nrow(.) > 0))) %>% 
+  #     janitor::clean_names()
+  #   
+  #   bill_df$house_votes = list(filter(vote_rolls_df, chamber == "House"))
+  #   bill_df$senate_votes = list(filter(vote_rolls_df, chamber == "Senate"))
+  # } else {
+  #   bill_df$house_votes = list(tibble())
+  #   bill_df$senate_votes = list(tibble())
+  # }
   
   # Actions ---------
   log_debug(logger, 
-           bill_type = bill_df$billType,
-           bill_num = bill_df$billNumber,
+           bill_type = bill_df$type,
+           bill_num = bill_df$number,
            "Parsing actions")
   
   bill_actions = xml_find_all(bill_xml, "//bill/actions/item")
   
   if("actions" %in% nested_attributes && length(bill_actions)>0){
 
-    bill_action_counts = as_list(xml_find_all(bill_xml, "//bill/actions/*[not(self::item)]")) %>% 
-      map_dfc(flatten_dfc) %>% 
-      rename_with(.cols = everything(), ~str_c("actions_", .)) %>% 
-      pivot_longer(everything(), names_to = "action", names_prefix = "actions_", values_to = "count")
+    if(length(xml_find_all(bill_actions, "recordedVotes")) > 0){
+      browser()
+    }
+    # Action counts not found in Senate bill 3271
+    # bill_action_counts = as_list(xml_find_all(bill_xml, "//bill/actions/*[not(self::item)]")) %>% 
+    #   map_dfc(flatten_dfc) %>% 
+    #   rename_with(.cols = everything(), ~str_c("actions_", .)) %>% 
+    #   pivot_longer(everything(), names_to = "action", names_prefix = "actions_", values_to = "count")
     
     # Coerce nodes to list
     actions_df = as_list(bill_actions) %>% 
@@ -614,16 +625,16 @@ extract_bill_status = function(xml_file,
     
     bill_df$actions = list(actions_df)
     
-    bill_df$action_counts = list(type_convert(bill_action_counts,
-                                              col_types = cols(action = col_character(), count = col_integer())))
+    # bill_df$action_counts = list(type_convert(bill_action_counts,
+    #                                           col_types = cols(action = col_character(), count = col_integer())))
   } else {
     bill_df$actions = list(tibble())
   }
   
   # Amendments ---------
   # log_debug(logger, 
-  #          bill_type = bill_df$billType,
-  #          bill_num = bill_df$billNumber,
+  #          bill_type = bill_df$type,
+  #          bill_num = bill_df$number,
   #          "Parsing amendments")
   # amendments_node = bill_nodesets[["amendments"]]
   # if(xml_length(amendments_node)>0){
@@ -640,8 +651,8 @@ extract_bill_status = function(xml_file,
   
   # Sponsors ---------
   log_debug(logger, 
-           bill_type = bill_df$billType,
-           bill_num = bill_df$billNumber,
+           bill_type = bill_df$type,
+           bill_num = bill_df$number,
            "Parsing sponsors")
   
   bill_sponsors = xml_find_all(bill_xml, "//bill/sponsors/item")
@@ -661,8 +672,8 @@ extract_bill_status = function(xml_file,
   
   # Cosponsors ---------
   log_debug(logger, 
-           bill_type = bill_df$billType,
-           bill_num = bill_df$billNumber,
+           bill_type = bill_df$type,
+           bill_num = bill_df$number,
            "Parsing cosponsors")
   
   bill_cosponsors = xml_find_all(bill_xml, "//bill/cosponsors/item")
@@ -682,11 +693,11 @@ extract_bill_status = function(xml_file,
   finished_df = as_tibble(bill_df) %>% 
     janitor::clean_names() %>% 
     # Combine bill type and number to create an ID
-    unite(bill_id, bill_type, bill_number, sep = "-", remove = F)
+    unite(bill_id, type, number, sep = "-", remove = F)
   
   log_info(logger, 
-            bill_type = bill_df$billType,
-            bill_num = bill_df$billNumber,
+            bill_type = bill_df$type,
+            bill_num = bill_df$number,
             "Complete")
   
   mutate(finished_df,
