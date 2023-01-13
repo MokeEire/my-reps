@@ -767,12 +767,7 @@ extract_bill_status = function(xml_file,
             "Complete")
   
   mutate(finished_df,
-         across(ends_with("date"), as_datetime),
-         actions = map(actions, mutate, 
-                       action_type = factor(action_type, 
-                                            levels = c("IntroReferral", "Committee", "Floor", 
-                                                       "Discharge", "President", "BecameLaw"), 
-                                            ordered = T))
+         across(ends_with("date"), as_datetime)
          )
 }
 
