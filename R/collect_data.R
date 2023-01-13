@@ -6,11 +6,9 @@ library(reactable)
 plan(multisession)
 source("R/parsing_functions.R")
 
-
-
-action_codes = read_csv(here("data", "action_codes.csv"), col_types = "cc")
-
 # List files ----
+# Files collected from:
+# https://www.govinfo.gov/bulkdata/BILLSTATUS/117
 
 bill_types = list.files(here("data", "BILLSTATUS","117"))
 
