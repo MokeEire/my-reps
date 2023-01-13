@@ -44,7 +44,8 @@ Using the `collect_data.R` script, I parsed govinfo's house and senate bill data
 
 # Data overview
 
-First, `unnest()` the actions from the bills to see action-level information.
+First, let's have a look at the data.
+`unnest()` actions from the bill data to see action-level information.
 
 ```{r}
 # Select non-list columns and then select action-related columns
@@ -75,6 +76,11 @@ First, `unnest()` the actions from the bills to see action-level information.
 glimpse(actions_unnested, width = 80)
 ```
 
+```{r}
+summary(actions_unnested)
+```
+
+
 The data contains `r scales::comma(nrow(actions_unnested))` actions on `r scales::comma(n_distinct(actions_unnested$bill_id))` different bills. How often do we have data for each column?
 
 ```{r}
@@ -101,6 +107,10 @@ Action data includes:
 
 -   the committee related to the action
 
+Let's look at some of the key columns in detail.
+
+## Action Type
+
 To clean the data, and to break up the work, it helps to think about the different steps of the legislative process which, [according to congress.gov](https://www.congress.gov/legislative-process) are:
 
 -   Introduction and Referral of Bills
@@ -119,17 +129,14 @@ To clean the data, and to break up the work, it helps to think about the differe
 
 -   Presidential Actions
 
-There are a few columns which are helpful for identifying which of these steps an action belongs to. `action_type` aligns most closely with these steps, while `action_code` is a more fine-grain category but is more often missing. `action_source_name` indicates the source of the action data and is useful for understanding how the data is constructed.
-
-## Action Type
-
+`action_type` is the field that aligns most closely with these steps.
 The different values of `action_type`, where `n` is the number of actions:
 
 ```{r}
 count(actions_unnested, action_type)
 ```
 
-How many bills does each type of action occur on? This is a different question than the counts above because there can be multiple of the same action type on a bill.
+How often does each action type occur on a bill? 
 
 ```{r}
 (action_type_summary = actions_unnested %>% 
@@ -144,11 +151,12 @@ How many bills does each type of action occur on? This is a different question t
   ))
 ```
 
-From this we can see that bills were always introduced, but only 38% received any attention in committees, \~10% went to the floor, and 1.3% became law.
+Bills are always introduced, but only 38% received any attention in committees, \~10% went to the floor, and 1.3% became law.
 
 ## Action Codes
 
-govinfo provides a table of action codes in the [Bill Status User Guide](https://github.com/usgpo/bill-status/blob/main/BILLSTATUS-XML_User_User-Guide.md#3-action-code-element-possible-values), but unfortunately, as the Government Publishing Office describes, there are a number of issues:
+`action_code` is a more fine-grain category than `action_type` but is often missing. 
+govinfo provides a table of action codes in the [Bill Status User Guide](https://github.com/usgpo/bill-status/blob/main/BILLSTATUS-XML_User_User-Guide.md#3-action-code-element-possible-values)and describes the issues with the codes too:
 
 > *Various code sets are used by multiple systems in the House, Senate, and Library of Congress by legislative clerks and data editors for functions independent of this bulk data set. As new codes and systems were developed, there was no coordinated effort to retroactively apply new codes to old records. Many codes are concatenated with other codes or elements or utilize free text. Codes in one set may be redundant with a different code in another code set. Additionally, some codes may have been used and re-used over the years for different purposes further complicating the ability to create an authoritative list.*
 >
@@ -165,7 +173,7 @@ So action codes will need a good bit of cleaning before they're useful. To start
   glimpse(width = 80)
 ```
 
-How often are action codes and their descriptions present?
+How often are action codes anddescriptions present?
 
 ```{r}
 #| label: action-code-stats
@@ -174,24 +182,25 @@ actions_joined %>%
   summarise(
     actions = n(),
     code_present = sum(!is.na(action_code)),
-    code_desc_present = sum(!is.na(action_desc)),
-    code_no_desc = sum(!is.na(action_code)&is.na(action_desc))
+    code_desc_present = sum(!is.na(action_desc))
   )
 ```
 
-Note there are two types of issues here:
-
-1.  Missing an action code
-2.  Having an action code but missing a code description
-
-How do these issues differ by action type?
+Check if cases exist where a description is present without an action code?
 
 ```{r}
-#| label: action-code-freq-bar
-#| fig-height: 6
+actions_joined %>% 
+  filter(is.na(action_code)) %>% 
+  count(action_desc)
+# Should return missing action desc and the number of actions without action codes
+```
 
+
+Note there are cases where both `action_code` and `action_desc` are missing and cases where `action_desc` is missing while `action_code` is present.
+
+```{r}
 # Count actions with codes and descriptions by bill and action type
-action_codes_summary_stats = actions_joined %>% 
+(action_codes_summary_stats = actions_joined %>% 
   # Make missing action types explicit
   mutate(action_type = fct_explicit_na(action_type)) %>% 
   # Count coded actions by chamber and action type
@@ -202,75 +211,24 @@ action_codes_summary_stats = actions_joined %>%
     code_present_pct = code_present/actions,
     desc_present = sum(!is.na(action_desc)),
     desc_present_pct = desc_present/actions,
-    code_no_desc = sum(!is.na(action_code)&is.na(action_desc)),
-    code_no_desc_pct = code_no_desc/actions,
+    # code_no_desc = sum(!is.na(action_code)&is.na(action_desc)),
+    # code_no_desc_pct = code_no_desc/actions,
     .groups = "drop"
-  )
+  )) %>% 
+  mutate(across(ends_with("_pct"), scales::percent, accuracy = .1))
 
-action_codes_summary_stats %>% 
-  # Plot
-  ggplot(., aes(y = fct_rev(action_type)))+
-  # All actions
-  geom_col(aes(x = actions),
-           position = position_dodge(width = 1),
-           colour = my_col_pal[3], alpha = .85)+
-  # Coded actions
-  geom_col(aes(x = actions*code_present_pct),
-           fill = viz_colours[1],
-           colour = my_col_pal[3],
-           position = position_dodge(width = 1),
-           alpha = .95)+
-  # Coded actions
-  ggpattern::geom_col_pattern(aes(x = actions*code_no_desc_pct),
-                                  pattern_fill = viz_colours[2],
-           # pattern_colour = my_col_pal[4],
-           pattern_density = .5,
-           position = position_dodge(width = 1),
-           alpha = .95)+
-  # Axes
-  scale_x_continuous(labels = scales::comma, 
-                     breaks = scales::breaks_pretty(),
-                     expand = expansion(mult = c(0, .1)))+
-  # scale_fill_manual(name = NULL, values = viz_colours[1:7])+
-  # ggpattern::scale_pattern_fill_manual(name = NULL, values = viz_colours[1:7])+
-  labs(title = "How often are action code and code description information available?",
-       subtitle = "Action code and description presence, by action type",
-       caption = "Striped area indicates code is present but no description",
-       # caption = source_caption("govinfo/US GPO"),
-       y = NULL, x = "Actions")+
-  # facet_wrap(~bill_type_cat, scales = "free_x")+
-  theme_moke(plots_pane = T)+
-  theme(legend.position = "none",
-        panel.grid.major.y = element_blank(),
-        panel.grid.major.x = element_line())
 ```
 
-```{r}
-action_codes_summary_stats
+So there is some work to do for Intro/Referral, Committee, and Floor actions to develop comprehensive coding for each type of action (except perhaps `BecameLaw`). This means identifying actions missing action code or code description and categorizing them using the text of the action, the source name, date/time, and related actions as context.
 
-actions_joined %>% 
-  group_by(action_type) %>%
-  # Count actions, actions w/code, and coded proportion
-  summarise(
-    n = n(),
-    coded = sum(!is.na(action_code)),
-    # not_coded = sum(is.na(action_code)),
-    coded_desc = sum(!is.na(action_code)&!is.na(action_desc)),
-    coded_pct = scales::percent(coded/n()),
-    coded_desc_pct = scales::percent(coded_desc/coded),
-    .groups = "drop"
-  )
-```
-
-So there is a good bit of work to do for Intro/Referral, Committee, and Floor actions to develop comprehensive coding for each type of action (except perhaps `BecameLaw`). I am going to split the data by action type to break the task up. In each case, I will need to identify actions missing an action code or have an action code but do not have a description and develop a correct coding for them.
-
-There are also a number of cases where actions are duplicated in the data which need to be reconciled in order to make sense of the legislative timeline. Below are a list of the potential duplicates I have found:
+There are a number of cases where actions are duplicated in the data which need to be reconciled in order to make sense of the legislative timeline. Below are a list of the potential duplicates I have found:
 
 -   Action code `E30000` and `36000` with action type `President` and `BecameLaw` respectively appear to both represent the president signing a bill into law, while action codes `E40000` and `36000` with the same respective action types represent a bill becoming a public law. In this case, action type `President` and `BecameLaw` are interchangeable
 -   Action code `Intro-H` appears to be a duplicate of action code `1000`, both of which are `IntroReferral` action types
 
 ## Action Source
 
+`action_source_name` indicates the source of the action data and is useful for understanding how the data is constructed.
 What proportion of the data does each source type account for?
 
 ```{r}
@@ -364,7 +322,7 @@ count(actions_unnested, bill_type_cat, bill_id, name = "actions") %>%
 
 The vast majority of bills have 5 or fewer actions recorded on them. It seems like there are slightly more actions on concurrent resolutions on average, but this observation may change after cleaning the data.
 
-# Intro/Referral
+# Intro/Referral actions
 
 Legislation must be introduced either in the House or the Senate. Their designation depends on the type of legislation being introduced and the number of bills already introduced in the current congressional session. Bills are then referred to relevant committees to be further developed.
 
@@ -405,6 +363,7 @@ Some questions to answer about the action codes:
 4.  For actions without a code, can we infer a description for the action similar to action codes?
 5.  Do we have duplicate actions?
 
+## 1. Which actions have codes
 
 What codes do we have?
 
@@ -424,7 +383,9 @@ How many actions are coded but missing descriptions?
 nrow(intro_actions[!is.na(intro_actions$action_code) & is.na(intro_actions$action_desc), ])
 ```
 
-## Missing Action Description
+## Code Actions
+
+### Missing description
 
 Can we come up with a description for action codes based on the text of their actions? Use `action_text` to get further information on action codes without descriptions.
 
@@ -472,9 +433,10 @@ Put these codes into a tibble to join on action code.
 ))
 ```
 
-## Missing Action Code
+### Missing code
 
-In cases where the action does not have a code, can we come up with a category with similar precision to an action code based on the action text?
+For actions without a code, can we can we infer a description for the action similar to action codes?
+Below I count the instances of `action_text` to see which occur most often. 
 
 ```{r}
 (intro_actions_missing_code = intro_actions %>% 
@@ -490,6 +452,14 @@ intro_actions_missing_code %>%
   count(action_source_name, sort = T)
 ```
 
+::: callout-caution
+### Assumption
+
+The differences between "Read the second time and referred to the Committee..." and "Read twice and referred to the Committee..." are not vitally important and can be combined.\
+To verify this, I will look into the meaning of a bill being read a second time in the Senate.\
+Potentially check [here](https://www.govinfo.gov/content/pkg/CDOC-110hdoc49/pdf/CDOC-110hdoc49.pdf)
+:::
+
 The actions can be grouped into the following:
 
 -   Read the second time and referred
@@ -503,14 +473,6 @@ The actions can be grouped into the following:
     -   Read twice and referred
 
 -   Referred to committee
-
-::: callout-caution
-### Assumption
-
-The differences between "Read the second time and referred to the Committee..." and "Read twice and referred to the Committee..." are not vitally important and can be combined.\
-To verify this, I will look into the meaning of a bill being read a second time in the Senate.\
-Potentially check [here](https://www.govinfo.gov/content/pkg/CDOC-110hdoc49/pdf/CDOC-110hdoc49.pdf)
-:::
 
 Split the actions with no codes into two categories using regex:
 
@@ -563,7 +525,7 @@ Join our action codes to intro actions and fill in missing descriptions using th
   count(action_cat, sort = T)
 ```
 
-## Duplicates
+## Identify duplicates
 
 Use `janitor::get_dupes()` with all variables except code-related variables and source system variables to identify duplicate actions.
 
