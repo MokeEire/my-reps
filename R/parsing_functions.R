@@ -200,7 +200,8 @@ format_date_api = function(date){
 
 # XML parsing functions ---------------------------------------------------
 
-
+# Using the user guide to understand the XML structure
+# https://github.com/usgpo/bill-status/blob/main/BILLSTATUS-XML_User_User-Guide.md
 
 #' Parse committee
 #'
@@ -415,6 +416,10 @@ parse_action = function(action){
   votes = keep_at(action, "recordedVotes")
   
   # Remove votes
+  # Issue: actions which have 2 committee items are parsed as two separate actions
+  #       The XML files are inconsistent in having separate action items and separate committee sub-items when
+  #       an action is related to two committees
+  # Solution: Treat each committee referral as separate action
   actions_df = discard_at(action, "recordedVotes") %>% 
     # Flatten source columns, calendar number, and committee data
     map_at("sourceSystem", list_flatten) %>% 
