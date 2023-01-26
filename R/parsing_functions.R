@@ -510,17 +510,6 @@ attribute_col_types = list(
                     cosponsor_middleName = col_character())
 )
 
-count_attr_colnames = function(xml_file, attribute = "actions"){
-  bill_xml = read_xml(xml_file) %>% 
-    xml_child("bill")
-  
-  if(attribute == "actions"){
-    as_list(xml_find_all("actions/item")) %>% 
-      map_dfr(parse_action) %>% 
-      colnames()
-  }
-}
-
 
 
 extract_bill_status = function(xml_file, 
