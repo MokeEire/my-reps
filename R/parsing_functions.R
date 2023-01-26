@@ -336,6 +336,7 @@ parse_vote_roll = function(vote, chamber){
       ))
     
     vote_df %>% 
+      rename_with(~str_remove(., "^vote_")) %>% 
       mutate(legislator_votes = list(legislator_vote_df),
              party_votes = list(party_vote_totals_df)) %>% 
       janitor::clean_names()
@@ -388,6 +389,7 @@ parse_vote_roll = function(vote, chamber){
       list_cbind()
     
     vote_df %>% 
+      rename_with(~str_remove(., "^vote_")) %>% 
       mutate(legislator_votes = list(vote_members)) %>% 
       janitor::clean_names()
   }
@@ -426,10 +428,10 @@ parse_action = function(action){
   
   if(length(votes)>0){
     votes_df = as_tibble(list_flatten(votes$recordedVotes$recordedVote)) %>% 
-      mutate(vote_roll = map2(url, chamber, parse_vote_roll))
+      mutate(vote = map2(url, chamber, parse_vote_roll))
     
     # Add in vote
-    actions_df = mutate(actions_df, vote = list(votes_df))
+    actions_df = mutate(actions_df, vote_record = list(votes_df))
   }  
   actions_df
 }
