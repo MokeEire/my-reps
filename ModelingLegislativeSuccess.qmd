@@ -12,7 +12,7 @@ format:
 editor: visual
 ---
 
-Why do some bills become law while others are destined to be a drop in the vast archives of Congress? Presumably the bills that become law address important problems of the time, are well written, and
+Why do some bills become law while others are merely a drop in the vast archives of Congress? Presumably the bills that become law address important problems of the time, are well written, and legislators expect them to be effective.
 
 ```{r}
 #| label: setup
@@ -30,11 +30,15 @@ source("R/parsing_functions.R")
 action_codes = read_csv(here("data", "action_codes.csv"), col_types = "cc")
 
 # Load cleaned R objects
-all_bills = readRDS(here("data", "cleaned", "BILLSTATUS_117.Rds"))
+# Check for latest version of clean data
+clean_data = fs::dir_info(here("data", "cleaned"))
+latest_file = clean_data[which.max(clean_data$change_time), "path", drop = T]
+
+all_bills = readRDS(latest_file)
 ```
 
 ```{r}
-glimpse(all_bills, width = 80)
+glimpse(all_bills)
 ```
 
 # Bills that became laws
@@ -44,7 +48,7 @@ To determine whether a bill became law, search `actions` for *BecameLaw* as an a
 ```{r}
 (bills_became_law = all_bills %>% 
     # Create an indicator for whether bills' actions df have a BecameLaw action
-    mutate(became_law = map_lgl(actions, ~ "BecameLaw" %in% .$action_type)) %>% 
+    mutate(became_law = map_lgl(actions, ~ "BecameLaw" %in% .$type)) %>% 
     # Filter to these bills only
     filter(became_law))
 ```
@@ -64,6 +68,73 @@ bills_became_law %>%
   arrange(title) %>% 
   select(bill_id, title, everything())
 ```
+
+```{r}
+bills_became_law %>% 
+  # Count instances of each title
+  count(title) %>% 
+  # Keep titles with more than 1
+  filter(n > 1)
+```
+
+What types of legislation became law?
+
+```{r}
+bills_became_law %>% 
+  count(type)
+```
+
+Which policy areas were the bills related to?
+
+```{r}
+(new_laws_policy_areas = bills_became_law %>% 
+  # Expand policy areas
+  unnest(policy_areas, keep_empty = T) %>% 
+   mutate(policy_areas = fct_infreq(fct_explicit_na(policy_areas))) %>% 
+  # Count instances of each
+  count(policy_areas))
+```
+
+Top/Bottom 10 policy areas?
+
+```{r}
+(top_policy_areas = new_laws_policy_areas %>% 
+  slice_max(n, n = 10, with_ties = F) %>% 
+   mutate(policy_areas = fct_rev(policy_areas)))
+
+(bottom_policy_areas = new_laws_policy_areas %>% 
+  slice_min(n, n = 10, with_ties = F))
+```
+
+```{r}
+library(patchwork)
+
+top_plot = ggplot(top_policy_areas, aes(y = policy_areas, x = n))+
+  geom_col()+
+  geom_text(aes(label = n), hjust = 0)+
+  labs(y = NULL, title = "Most common policy areas")
+
+bottom_plot = ggplot(bottom_policy_areas, aes(y = policy_areas, x = n))+
+  geom_col()+
+  geom_text(aes(label = n), hjust = 0)+
+  labs(y = NULL, title = "Least common policy areas")
+
+
+(top_plot + bottom_plot)*
+  scale_x_continuous(name = NULL, limits = c(0, 100), expand = expansion())*
+  theme_minimal()
+```
+
+
+
+```{r}
+bills_became_law %>% 
+  summarise(
+    n_policy_areas = map_dbl(policy_areas, length)
+  ) %>% 
+  count(n_policy_areas)
+```
+
 
 Okay so maybe we don't have copies of each bill and the origin chamber is a functional field! So how many actions are there on each of these bills that became law?
 
