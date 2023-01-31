@@ -51,14 +51,30 @@ all_files = flatten_chr(bill_files)
 # Extract bills from files ------------------------------------------------
 
 # Testing
-# map_dfr(bill_files$hres, extract_bill_status, log_types = "console")
-tic(str_c("Extract ", length(all_files), " bills"))
-all_bills = future_map_dfr(all_files, extract_bill_status, log_types = NULL)
+sample_files = sample(all_files, 500)
+
+tic()
+sample_df = map(sample_files, extract_bill_status, 
+                       log_types = "console", .progress=T) %>% 
+  list_rbind()
 toc()
 
 
+tic(str_c("Extract ", length(all_files), " bills"))
+all_bills = future_map(all_files, extract_bill_status, 
+                       log_types = NULL, .progress = T) %>% 
+  list_rbind()
+toc()
+
+
+# Check data --------------------------------------------------------------
+
+skimr::skim(all_bills)
+# Note: length on list variables counts tibble columns
 
 # Save objects ------------------------------------------------------------
 
 saveRDS(all_bills, here("data", "cleaned", paste0("BILLSTATUS_117_", lubridate::today(), ".Rds")))
 # saveRDS(actions_unnested, here("data", "cleaned", "BILLSTATUS_117_Actions.Rds"))
+
+
