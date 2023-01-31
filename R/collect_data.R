@@ -9,7 +9,10 @@ source("R/parsing_functions.R")
 # List files ----
 # Files collected from:
 # https://www.govinfo.gov/bulkdata/BILLSTATUS/117
-
+# Congress committee membership:
+# https://github.com/unitedstates/congress-legislators/commit/5e4d9a0656458646e96c2b378fba640c0e22f8b1?diff=split
+# Also here:
+# https://clerk.house.gov/xml/lists/MemberData.xml
 bill_types = list.files(here("data", "BILLSTATUS","117"))
 
 bill_folders = here("data", "BILLSTATUS", "117", bill_types) %>% 
