@@ -400,13 +400,21 @@ parse_vote_roll = function(vote, chamber){
   
 }
 
-#' Parse action
-#'
-#' @param action action element
+#' Parse action element
 #' 
-#' Flatten action source system and committee data separately then flatten the rest. 
+#' @description
+#' `parse_action` parses an action XML node from a BILLSTATUS XML file into a dataframe row.  
 #'
-#' @return
+#' @param action action XML node
+#' 
+#' @details 
+#' To produce a single row tibble, this function separates votes and 
+#' committees from each action for two reasons. 1) they can contain multiple child elements
+#' and 2) they may not be present.
+#' The remaining action elements are flattened into a tibble. Committees and votes are
+#' added as list columns when they are present. 
+#'
+#' @returns 1-row tibble
 #' @export
 #'
 #' @examples
@@ -414,23 +422,35 @@ parse_action = function(action){
 
   # Separate votes and parse the vote roll
   votes = keep_at(action, "recordedVotes")
+  committees = keep_at(action, "committees")
   
   # Remove votes
   # Issue: actions which have 2 committee items are parsed as two separate actions
   #       The XML files are inconsistent in having separate action items and separate committee sub-items when
   #       an action is related to two committees
   # Solution: Treat each committee referral as separate action
-  actions_df = discard_at(action, "recordedVotes") %>% 
+  actions_df = discard_at(action, c("recordedVotes", "committees")) %>% 
     # Flatten source columns, calendar number, and committee data
-    map_at("sourceSystem", list_flatten) %>% 
-    map_at("calendarNumber", list_flatten) %>% 
-    map_at("committees", map, list_flatten) %>% 
-    map_at("committees", map, as_tibble) %>% 
-    map_at("committees", list_rbind) %>% 
+    map_at(c("sourceSystem", "calendarNumber"), list_flatten) %>% 
     # Flatten the list into a df
     list_flatten() %>% 
     as_tibble()
   
+  # Parse committees
+  if(length(committees)>0){
+    committees_df = committees %>% 
+      # Flatten list of committee elements
+      map(map, list_flatten) %>% 
+      # Convert to tibble
+      map(map, as_tibble) %>% 
+      # Combine into rows
+      list_flatten() %>% 
+      list_rbind()
+    # Add in committees
+    actions_df = mutate(actions_df, committees = list(committees_df))
+  }  
+  
+  # Parse votes
   if(length(votes)>0){
     votes_df = as_tibble(list_flatten(votes$recordedVotes$recordedVote)) %>% 
       mutate(vote = map2(url, chamber, parse_vote_roll))
