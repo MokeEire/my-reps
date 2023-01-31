@@ -121,7 +121,7 @@ get_package_xml = function(packageId){
   
 }
 
-getPublished = function(dateIssuedStartDate, dateIssuedEndDate,
+get_published = function(dateIssuedStartDate, dateIssuedEndDate,
                         startingRecord = 0, numRecords = 20,
                         collections, congress,
                         docClass){
@@ -132,18 +132,21 @@ getPublished = function(dateIssuedStartDate, dateIssuedEndDate,
     end_date = paste0("/", format_date_api(dateIssuedEndDate))
   }
   
+  
   # Construct URL to request
   url = paste0(
     # Root
     "https://api.govinfo.gov/published/",
     # Start and end dates
-    format_date_api(dateIssuedStartDate), end_date,
+    # format_date_api(dateIssuedStartDate), 
+    dateIssuedStartDate,
+    end_date,
     # Record indexing
     "?offset=", startingRecord, "&pageSize=", numRecords, 
     # Collection
     "&collection=",collections,
-    if_else(missing(congress), "", paste0("&congress=", congress)),
-    if_else(missing(docClass), "", paste0("&docClass=", docClass)),
+    ifelse(missing(congress), "", paste0("&congress=", congress)),
+    ifelse(missing(docClass), "", paste0("&docClass=", docClass)),
     # API key
     "&api_key=", apiGovKey
   )
@@ -154,20 +157,30 @@ getPublished = function(dateIssuedStartDate, dateIssuedEndDate,
   # Assign the packages dataframe
   packages = request$packages
   
+  
+  
   # Request the next page of results while a next page exists
-  while(!is_null(request$nextPage)){
-    next_page = URLencode(request$nextPage)
+  # while(!is_null(request$nextPage)){
+  while(nrow(packages)<= request$count){
+    summary_links = URLencode(paste0(packages$packageLink, "&api_key=", apiGovKey))
+    map(summary_links, fromJSON)
+    browser()
+    next_page_url = paste0(request$nextPage, "&api_key=", apiGovKey)
+    next_page = URLencode(next_page_url)
     request = fromJSON(next_page)
-    
+    # request = tryCatch(fromJSON(next_page), 
+    #                    error = function(e)Sys.sleep(30),
+    #                    finally = fromJSON(next_page))
+    # browser()
     # Requests tend to fail as we approach 10k results
-    if(nrow(packages)> 9500){
-      browser()
-    }
+    # if(nrow(packages)> 9500){
+    #   browser()
+    # }
     # Append new results to packages
     packages = bind_rows(packages, request$packages)
     
     # A tiny bit of sleep seems to reduce API errors
-    Sys.sleep(.1)
+    Sys.sleep(.5)
   }
   
   return(packages)
@@ -176,11 +189,6 @@ getPublished = function(dateIssuedStartDate, dateIssuedEndDate,
 
 # Helper functions --------------------------------------------------------
 
-
-
-silent_convert = function(df, ...){
-  suppressWarnings(suppressMessages(readr::type_convert(df, ...)))
-}
 
 list_flatten_rename = function(list_to_flatten, 
                               name_prefix = "prefix"){
@@ -723,7 +731,7 @@ extract_bill_status = function(xml_file,
   #   amendments_df = map(bill_amendments, as_list) %>% 
   #     map_dfr(parse_action)
   #   
-  #   bill_df$amendments = list(silent_convert(amendments_df))
+  #   bill_df$amendments = list(amendments_df)
   # } else {
   #   bill_df$amendments = list(tibble())
   # }
