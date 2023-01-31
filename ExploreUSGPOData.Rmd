@@ -3,17 +3,15 @@ title: "Exploring behaviour in US Legislation data"
 output: html_notebook
 ---
 
-An overarching goal of the exploration is to create an app which provides people with a clearer view of who their representatives are and what they are doing.
-I think the ideal solution combines Datamade's [beautifully simple representative finder](https://myreps.datamade.us/) and Project Vote Smart's [vast collection of data on legislator activities](https://justfacts.votesmart.org/).
+An overarching goal of the exploration is to create an app which provides people with a clearer view of who their representatives are and what they are doing. I think the ideal solution combines Datamade's [beautifully simple representative finder](https://myreps.datamade.us/) and Project Vote Smart's [vast collection of data on legislator activities](https://justfacts.votesmart.org/).
 
 Other avenues of inquiry that have come to mind:
 
-- examine how long bills typically take to become law, which parts of the process are the most time-intensive, and which decision-makers are acting in each stage?
-- map the legislative process for bills and get a sense for how legislator behaviour affects a bill's likelihood of being considered, its content, and the eventual outcome
-- Make a sankey diagram depicting how bills flow through congress
+-   examine how long bills typically take to become law, which parts of the process are the most time-intensive, and which decision-makers are acting in each stage?
+-   map the legislative process for bills and get a sense for how legislator behaviour affects a bill's likelihood of being considered, its content, and the eventual outcome
+-   Make a sankey diagram depicting how bills flow through congress
 
-It might be worth reaching out to: https://github.com/unitedstates/congress
-
+It might be worth reaching out to: <https://github.com/unitedstates/congress>
 
 ```{r setup}
 library(extrafont)
@@ -27,25 +25,22 @@ apiGovKey = Sys.getenv("GOVINFO_API_KEY")
 
 ```
 
-To understand how our representatives are acting, we need to know what they're actually doing.
-This can come in the form of introducing legislation, being part of a committee that considers a bill, and simply voting for or against legislation at various stages in the process.
-The US government maintains the govinfo API which provides access to a lot of congressional information, including the actions taken on a bill throughout its lifetime, which is the first source I'll be looking at to explore representative behaviour.
-
+To understand how our representatives are acting, we need to know what they're actually doing. This can come in the form of introducing legislation, being part of a committee that considers a bill, and simply voting for or against legislation at various stages in the process. The US government maintains the govinfo API which provides access to a lot of congressional information, including the actions taken on a bill throughout its lifetime, which is the first source I'll be looking at to explore representative behaviour.
 
 # GovInfo API
 
->govinfo is a service of the United States Government Publishing Office (GPO), which is a Federal agency in the legislative branch.
+> govinfo is a service of the United States Government Publishing Office (GPO), which is a Federal agency in the legislative branch.
 >
-govinfo provides free public access to official publications from all three branches of the Federal Government.
+> govinfo provides free public access to official publications from all three branches of the Federal Government.
 
 Resources:
 
-- [govinfo website](https://www.govinfo.gov/)
-- [govinfo API documentation on github](https://github.com/usgpo/api)
+-   [govinfo website](https://www.govinfo.gov/)
+-   [govinfo API documentation on github](https://github.com/usgpo/api)
 
 ## Collections
 
->A collection is a set of content that has a consistent format -- for example, the Congressional Record is considered a collection within govinfo, as well as the Federal Register. Within govinfo, a number of these collections have `collection codes`, which are a useful way to search specific metadata fields.
+> A collection is a set of content that has a consistent format -- for example, the Congressional Record is considered a collection within govinfo, as well as the Federal Register. Within govinfo, a number of these collections have `collection codes`, which are a useful way to search specific metadata fields.
 
 Available collections:
 
@@ -58,14 +53,14 @@ collection_url = URLencode(paste0("https://api.govinfo.gov/collections?api_key="
 
 ## Published
 
->This is similar to the collections service in that it provides users with an easy way to get a list of packages by date. The difference is that this service provides packages based on dateIssued -- this generally corresponds to the publication date of the content itself, rather than the govinfo system update time for a publication.
+> This is similar to the collections service in that it provides users with an easy way to get a list of packages by date. The difference is that this service provides packages based on dateIssued -- this generally corresponds to the publication date of the content itself, rather than the govinfo system update time for a publication.
 
-- Congressional Bills
-- Congressional Bill Status
+-   Congressional Bills
+-   Congressional Bill Status
 
 API call format:
 
-https:// api.govinfo.gov/published/`dateIssuedStartDate`/`dateIssuedEndDate`?offset=`startingRecord`&pageSize=`number of records in call`&collection=`comma-separated list of values`&api_key=`your api.data.gov api key`
+<https://> api.govinfo.gov/published/`dateIssuedStartDate`/`dateIssuedEndDate`?offset=`startingRecord`&pageSize=`number of records in call`&collection=`comma-separated list of values`&api_key=`your api.data.gov api key`
 
 ### Bill Status
 
@@ -80,13 +75,7 @@ hr_117_bill_status = getPublished(dateIssuedStartDate = ymd("2020-01-01"),
 glimpse(hr_117_bill_status)
 ```
 
-The return object is a list with a count of records, the API query for the next page, and a dataframe of packages. 
-This dataframe contains:
-- the package ID
-- when it was issued and last modified
-- the API query for the package
-- the bill type
-- the congress number
+The return object is a list with a count of records, the API query for the next page, and a dataframe of packages. This dataframe contains: - the package ID - when it was issued and last modified - the API query for the package - the bill type - the congress number
 
 Let's take a sample package and see what information we can get with that.
 
@@ -98,11 +87,11 @@ sample_package
 
 ## Packages Service
 
->This service allows you to specify a govinfo `packageId` and retrieve available forms of content and metadata. A `/summary` json response is available that includes links and basic metadata about the package - generally equivalent to the information available on the details page for that package.
+> This service allows you to specify a govinfo `packageId` and retrieve available forms of content and metadata. A `/summary` json response is available that includes links and basic metadata about the package - generally equivalent to the information available on the details page for that package.
 >
->From the summary, you can get access to all available content and metadata formats for a package.
+> From the summary, you can get access to all available content and metadata formats for a package.
 
-We can get the summary using: 
+We can get the summary using:
 
 ```{r}
 (sample_package_summary = getPackages(packageId = sample_package$packageId, 
@@ -130,7 +119,6 @@ map_chr(hr_117_bill_status$packageId[1:10], get_package_xml)
 toc()
 ```
 
-
 ### What's in the XML?
 
 Now what can we get in the package's XML data
@@ -143,39 +131,34 @@ top = xmlRoot(sample_xml_doc)
 
 ```
 
-
-
 ```{r}
 sample_xml %>% 
   xml_child("bill")
 ```
 
-
-
 ```{r}
 xml_find_all(sample_xml, "bill")
 ```
 
-
-
 ```{r}
 (sample_bill = xml_child(sample_xml, "bill"))
 ```
+
 So what will we want:
 
-- billNumber
-- createDate
-- updateDate
-- originChamber
-- billType
-- introducedDate
-- congress
-- recordedVotes
-- committees
-- committeeReports
-- actions
-- sponsors
-- cosponsors
+-   billNumber
+-   createDate
+-   updateDate
+-   originChamber
+-   billType
+-   introducedDate
+-   congress
+-   recordedVotes
+-   committees
+-   committeeReports
+-   actions
+-   sponsors
+-   cosponsors
 
 What happens with xmlToDataFrame?
 
@@ -188,7 +171,6 @@ What happens with xmlToDataFrame?
 sample_df$title
 ```
 
-
 From this we can extract all of the attributes which only have a single value
 
 ```{r}
@@ -200,6 +182,7 @@ From this we can extract all of the attributes which only have a single value
 (bill_nodesets = map(xpaths, ~ xml_find_all(sample_bill, xpath = .x)) %>% 
   set_names(map_chr(., xml_name)))
 ```
+
 Some nodesets have multiple attributes so we'll need to work through those first
 
 ```{r}
@@ -233,9 +216,8 @@ committees_list = bill_committees %>%
 
 str(committees_list)
 ```
-Because the list of committees is pretty deeply nested, we use `map_depth` and for each committee we use `modify_at` and `flatten_chr` to flatten out the list. 
-For attributes which can have multiple values e.g. activities or subcommittees, we map over those and perform a similar procedure.
-In each case we rename the variables according to their category and whittle them down to a dataframe.
+
+Because the list of committees is pretty deeply nested, we use `map_depth` and for each committee we use `modify_at` and `flatten_chr` to flatten out the list. For attributes which can have multiple values e.g. activities or subcommittees, we map over those and perform a similar procedure. In each case we rename the variables according to their category and whittle them down to a dataframe.
 
 ```{r}
 committees_dfs = committees_list %>% 
@@ -273,6 +255,7 @@ nested_attributes[["actions"]] %>% xml_path()
 (bill_actions = nested_attributes[["actions"]] %>% 
   xml_find_all("item"))
 ```
+
 ```{r}
 (actions_df = bill_actions %>% 
   # Coerce nodes to list
@@ -327,8 +310,6 @@ nested_attributes[["cosponsors"]] %>% xml_path()
   xml_find_all("item"))
 ```
 
-
-
 ```{r}
 (cosponsors_df = bill_cosponsors %>% 
   # Coerce nodes to list
@@ -341,11 +322,6 @@ nested_attributes[["cosponsors"]] %>% xml_path()
   }))
 ```
 
-
-
-
-
-
 ```{r}
 list(sample_df, committees_df, sponsors_df, actions_df)
 
@@ -357,17 +333,15 @@ list(sample_df, committees_df, sponsors_df, actions_df)
 
 ### Putting this all together
 
-With these data points parsed, I put together a number of functions (creatively named `parsing_functions` in the R folder) for processing an XML file.
-Before I dive deeper into the API, I'm going to use the bulk data to explore first.
+With these data points parsed, I put together a number of functions (creatively named `parsing_functions` in the R folder) for processing an XML file. Before I dive deeper into the API, I'm going to use the bulk data to explore first.
 
 ```{r}
 fromJSON(URLencode(bill_status$nextPage))
 ```
 
-
 ## Bulk Data
 
-Using the bulk data from https://www.govinfo.gov/bulkdata/BILLSTATUS/117/
+Using the bulk data from <https://www.govinfo.gov/bulkdata/BILLSTATUS/117/>
 
 Directory structure
 
@@ -387,7 +361,6 @@ house_117_files = list.files(here("data", "BILLSTATUS","117", house_bill_types),
 ```{r}
 future_map_dfr(sample(house_117_files, 1), extract_bill_status)
 ```
-
 
 Using {furrr} has some benefits here
 
@@ -427,6 +400,7 @@ Count the number of items (committees, votes, actions, etc.) in each list column
    ungroup()) %>% 
   glimpse()
 ```
+
 #### Examine single bill
 
 What does the comprehensive data look like for a single bill?
@@ -456,12 +430,10 @@ house_117_bill %>%
   theme_mark(plots_pane = T)
 ```
 
-
 How often are each of the different elements found?
 
-- How often do bills have cosponsors?
-- How often are bills sent to committee?
-
+-   How often do bills have cosponsors?
+-   How often are bills sent to committee?
 
 ```{r}
 house_117_counts %>% 
@@ -496,7 +468,6 @@ hr117_counts %>%
   theme_minimal()
 ```
 
- 
 ```{r}
 hr117_counts %>% 
   ggplot(., aes(x = cosponsors_count))+
@@ -505,8 +476,6 @@ hr117_counts %>%
   theme_minimal()
 ```
 
-
- 
 ```{r}
 hr117_counts %>% 
   ggplot(., aes(x = votes_count))+
@@ -550,7 +519,6 @@ house_117_counts %>%
   select(billNumber, billType, title, action_sourceSystem_name, action_committee_name, actionDate, actionTime, action_type, actionCode, action_text) %>% View()
 ```
 
-
 ```{r}
 hr117_counts %>% 
   filter(date_first_action!=introducedDate) %>% 
@@ -558,8 +526,6 @@ hr117_counts %>%
   unnest(actions) %>% 
   filter(date_first_action == actionDate)
 ```
-
-
 
 ```{r}
 hr117_actions = hr117_counts %>% 
@@ -575,7 +541,6 @@ hr117_counts %>%
   mutate(became_law = map_lgl(actions, ~any(str_detect(.$action_type, "BecameLaw")))) %>% 
   filter(became_law)
 ```
-
 
 ### History of Bills
 
@@ -633,15 +598,13 @@ mods_url = URLencode(paste0(package_summary$xmlLink, "?api_key=", apiGovKey))
 
 ```
 
-
-
 ```{r}
 xml_contents(package_mods)
 ```
+
 ```{r}
 xml_children(package_mods) %>% glimpse()
 ```
-
 
 ```{r}
 granules_url = paste0(package_summary$granulesLink, "&api_key=", apiGovKey)
@@ -665,7 +628,6 @@ granules_1000
 
 ```
 
-
 ```{r}
 granules_list = map(granules$granules$granuleLink, 
     ~fromJSON(URLencode(paste0(., "?api_key=", apiGovKey))))
@@ -682,12 +644,14 @@ granules_flattened = granules_list %>%
 glimpse(granules_flattened)
 
 ```
+
 ```{r}
 granules_tables = granules_list %>% 
     map(keep, is_list)
 
 glimpse(granules_tables[1:3])
 ```
+
 ```{r}
 granules_df = granules_flattened %>% 
   mutate(download = map(granules_tables, "download"),
@@ -700,6 +664,7 @@ granules_df = granules_flattened %>%
 
 glimpse(granules_df)
 ```
+
 ```{r}
 granules_df %>% 
   add_count(granuleId) %>% 
@@ -723,11 +688,10 @@ granules_result = granules_xml[[1]] %>% xmlParse()
 
 granules_result
 ```
+
 ```{r}
 as_list(granules_xml[[1]])
 ```
-
-
 
 Get package summary data
 
@@ -750,10 +714,8 @@ hob_2021_granules$committees[1:2]
   flatten_dfr()
 ```
 
-
-
 # Resources
 
-- https://www.earthdatascience.org/courses/earth-analytics/get-data-using-apis/API-data-access-r/
-- https://stackoverflow.com/questions/43843204/r-error-when-using-geturl-from-curl-after-site-was-changed
-- https://robotwealth.com/how-to-wrangle-json-data-in-r-with-jsonlite-purr-and-dplyr/
+-   <https://www.earthdatascience.org/courses/earth-analytics/get-data-using-apis/API-data-access-r/>
+-   <https://stackoverflow.com/questions/43843204/r-error-when-using-geturl-from-curl-after-site-was-changed>
+-   <https://robotwealth.com/how-to-wrangle-json-data-in-r-with-jsonlite-purr-and-dplyr/>
