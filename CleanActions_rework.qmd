@@ -26,7 +26,11 @@ plan(multisession)
 source("R/parsing_functions.R")
 
 # Load cleaned R objects
-all_bills = readRDS(here("data", "cleaned", "BILLSTATUS_117_2022-11-10.Rds"))
+# Check for latest version of clean data
+clean_data = fs::dir_info(here("data", "cleaned"))
+latest_file = clean_data[which.max(clean_data$change_time), "path", drop = T]
+
+all_bills = readRDS(latest_file)
 # actions = readRDS(here("data", "cleaned", "BILLSTATUS_117_Actions.Rds"))
 
 # Action code mapping table from GovInfo
