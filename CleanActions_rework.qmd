@@ -48,28 +48,25 @@ Using the `collect_data.R` script, I parsed govinfo's house and senate bill data
 
 # Data overview
 
-First, let's have a look at the data.
-`unnest()` actions from the bill data to see action-level information.
+First, let's have a look at the data. `unnest()` actions from the bill data to see action-level information.
 
 ```{r}
 # Select non-list columns and then select action-related columns
 # (this includes the actions list column)
 (actions_unnested = select(all_bills, 
-                           bill_id, title, bill_type, actions) %>% 
+                           bill_id, title, type, actions) %>% 
    # Categorize type of legislation
-  mutate(bill_type_cat = case_when(bill_type %in% c("HR", "S") ~ "Bill",
-                                   bill_type %in% c("HJRES", "SJRES") ~ "Joint Resolution",
-                                   bill_type %in% c("HRES", "SRES") ~ "Simple Resolution",
-                                   bill_type %in% c("HCONRES", "SCONRES") ~ "Concurrent Resolution")) %>% 
+  mutate(type_cat = case_when(type %in% c("HR", "S") ~ "Bill",
+                                   type %in% c("HJRES", "SJRES") ~ "Joint Resolution",
+                                   type %in% c("HRES", "SRES") ~ "Simple Resolution",
+                                   type %in% c("HCONRES", "SCONRES") ~ "Concurrent Resolution")) %>% 
     # Unnest actions
-  unnest(actions)) %>% 
+  unnest(actions, names_sep = "_") %>% 
+   # The format changes now require using names_sep
+   # this means action columns have redundant prefix
+   rename_with(.cols = matches("action_"), str_remove, "action_")) %>% 
   # After assignment: Subset the data
-  head(20) %>% 
-  select(bill_id, title, bill_type_cat, 
-         action_date, action_time, 
-         action_type, action_code,
-         action_text,
-         action_source_name, action_committee_name)
+  head(20)
 
 ```
 
@@ -77,10 +74,10 @@ First, let's have a look at the data.
 
 ```{r}
 #| label: glimpse-actions
-glimpse(actions_unnested, width = 80)
+glimpse(actions_unnested)
 ```
 
-The data contains `r scales::comma(nrow(actions_unnested))` actions on `r scales::comma(n_distinct(actions_unnested$bill_id))` different bills. 
+The data contains `r scales::comma(nrow(actions_unnested))` actions on `r scales::comma(n_distinct(actions_unnested$bill_id))` different bills.
 
 Action data can include:
 
@@ -101,7 +98,7 @@ Naturally, each field is not always populated. How much data do we have for each
 ```{r}
 actions_unnested %>% 
   # Select action columns
-  select(starts_with("action")) %>% 
+  select(starts_with("actions")) %>% 
   # Calculate # of data points present over # of rows
   summarise(across(everything(), ~sum(!is.na(.))/n())) %>% 
   # pivot
@@ -110,31 +107,34 @@ actions_unnested %>%
 
 Let's look at some of the key columns in detail.
 
+
+
 ## Action Source
 
-`action_source_name` indicates the source of the action data and is useful for understanding how the data is constructed.
-What proportion of the data does each source type account for?
+`actions_source_system_name` indicates the source of the action data and is useful for understanding how the data is constructed. What proportion of the data does each source type account for?
 
 ```{r}
 actions_unnested %>% 
   add_tally() %>% 
-  group_by(action_source_name) %>% 
+  group_by(actions_source_system_name) %>% 
   summarise(
     actions = n(),
     proportion = scales::percent(n()/unique(n), accuracy = .1)
   )
 ```
 
-Library of Congress accounts for a little under half of the data while the House floor actions source accounts for a little less than a third of actions data.
+- Library of Congress accounts for a little under half the actions 
 
-Which types of actions are in each action source?
+- House floor actions account for just under a third of actions
+
+Which types of actions does each source collect?
 
 ```{r}
 #| label: source-by-type
 action_source_by_type = actions_unnested %>%
     # Count actions in each source
-    add_count(action_source_name, name = "source_actions") %>%
-    group_by(action_source_name, action_type) %>%
+    add_count(actions_source_system_name, name = "source_actions") %>%
+    group_by(actions_source_system_name, actions_type) %>%
     summarise(
       bills = n_distinct(bill_id),
       actions = n(),
@@ -145,7 +145,10 @@ action_source_by_type = actions_unnested %>%
     )
 
 action_source_by_type %>% 
-  tidyr::complete(action_source_name, action_type)
+  tidyr::complete(actions_source_system_name, actions_type) |> 
+  pivot_wider(id_cols = c(actions_type),
+              names_from = actions_source_system_name,
+              values_from = c(actions))
 
 ```
 
@@ -171,19 +174,18 @@ To clean the data, and to break up the work, it helps to think about the differe
 
 -   Presidential Actions
 
-`action_type` is the field that aligns most closely with these steps.
-The different values of `action_type`, where `n` is the number of actions:
+`actions_type` is the field that aligns most closely with these steps. The different values of `actions_type`, where `n` is the number of actions:
 
 ```{r}
-count(actions_unnested, action_type)
+count(actions_unnested, actions_type)
 ```
 
-How often does each action type occur on a bill? 
+How often does each action type occur on a bill?
 
 ```{r}
-(action_type_summary = actions_unnested %>% 
+(actions_type_summary = actions_unnested %>% 
   mutate(total_bills = n_distinct(bill_id)) %>% 
-  group_by(action_type, total_bills) %>% 
+  group_by(actions_type, total_bills) %>% 
   # Count actions, bills, and get % of total bills
   summarise(
     actions = n(),
@@ -211,8 +213,8 @@ So action codes will need a good bit of cleaning before they're useful. To start
 #| label:  action-codes
 (actions_joined = actions_unnested %>% 
     # Join actions to the list of action codes
-  left_join(action_codes, by = "action_code")) %>% 
-  glimpse(width = 80)
+  left_join(action_codes, by = c("actions_code" = "action_code"))) %>% 
+  glimpse()
 ```
 
 How often are action codes anddescriptions present?
@@ -223,7 +225,7 @@ How often are action codes anddescriptions present?
 actions_joined %>% 
   summarise(
     actions = n(),
-    code_present = sum(!is.na(action_code)),
+    code_present = sum(!is.na(actions_code)),
     code_desc_present = sum(!is.na(action_desc))
   )
 ```
@@ -232,28 +234,27 @@ Check if cases exist where a description is present without an action code?
 
 ```{r}
 actions_joined %>% 
-  filter(is.na(action_code)) %>% 
+  filter(is.na(actions_code)) %>% 
   count(action_desc)
 # Should return missing action desc and the number of actions without action codes
 ```
 
-
-Note there are cases where both `action_code` and `action_desc` are missing and cases where `action_desc` is missing while `action_code` is present.
+Note there are cases where both `actions_code` and `action_desc` are missing and cases where `action_desc` is missing while `actions_code` is present.
 
 ```{r}
 # Count actions with codes and descriptions by bill and action type
-(action_codes_summary_stats = actions_joined %>% 
+(actions_codes_summary_stats = actions_joined %>% 
   # Make missing action types explicit
-  mutate(action_type = fct_explicit_na(action_type)) %>% 
+  mutate(actions_type = fct_explicit_na(actions_type)) %>% 
   # Count coded actions by chamber and action type
-  group_by(action_type) %>% 
+  group_by(actions_type) %>% 
   summarise(
     actions = n(),
-    code_present = sum(!is.na(action_code)),
+    code_present = sum(!is.na(actions_code)),
     code_present_pct = code_present/actions,
     desc_present = sum(!is.na(action_desc)),
     desc_present_pct = desc_present/actions,
-    # code_no_desc = sum(!is.na(action_code)&is.na(action_desc)),
+    # code_no_desc = sum(!is.na(actions_code)&is.na(action_desc)),
     # code_no_desc_pct = code_no_desc/actions,
     .groups = "drop"
   )) %>% 
@@ -267,9 +268,6 @@ There are a number of cases where actions are duplicated in the data which need 
 
 -   Action code `E30000` and `36000` with action type `President` and `BecameLaw` respectively appear to both represent the president signing a bill into law, while action codes `E40000` and `36000` with the same respective action types represent a bill becoming a public law. In this case, action type `President` and `BecameLaw` are interchangeable
 -   Action code `Intro-H` appears to be a duplicate of action code `1000`, both of which are `IntroReferral` action types
-
-
-
 
 How are actions distributed across bills?
 
@@ -297,13 +295,11 @@ count(actions_unnested, bill_id) %>%
   # Labels
   labs(x = "Actions", y = "Bills", 
        title = "How much action does a bill get?",
-       subtitle = "Distribution of actions on bills")+
+       subtitle = "Distribution of congressional actions recorded on bills")+
   theme_moke(base_size = 11, plot_margin = margin(0,0,0,0))+
   theme(axis.line.y = element_blank(),
         legend.position = c(.9, .7))
 ```
-
-
 
 ```{r}
 # Count actions for each bill
@@ -315,9 +311,9 @@ Does the distribution vary by bill type?
 
 ```{r}
 # Count actions for each bill
-count(actions_unnested, bill_type_cat, bill_id, name = "actions") %>% 
+count(actions_unnested, type_cat, bill_id, name = "actions") %>% 
   # Group by bill type
-  group_by(bill_type_cat) %>% 
+  group_by(type_cat) %>% 
   # summary stats
   summarise(
     n_bills = n_distinct(bill_id),
@@ -334,9 +330,9 @@ The vast majority of bills have 5 or fewer actions recorded on them. It seems li
 
 The main components of this data cleaning are:
 
-- to categorize actions which are missing an action code or description, and 
+-   to categorize actions which are missing an action code or description, and
 
-- to remove duplicate actions
+-   to remove duplicate actions
 
 # Categorize Actions
 
