@@ -348,7 +348,7 @@ Legislation must be introduced either in the House or the Senate. Their designat
 
 ```{r}
 intro_actions = actions_joined %>% 
-  filter(action_type == "IntroReferral")
+  filter(actions_type == "IntroReferral")
 ```
 
 What data is missing for intro actions?
@@ -367,32 +367,31 @@ intro_actions %>%
 
 No Intro/Referral actions have a timestamp. Action codes are missing for 12% of Intro/Referral actions, while 2/3 are missing action descriptions.
 
-Action codes are very helpful because they allow us to differentiate between the various actions of the same general type. 
-Some questions to answer about the action codes:
+Action codes are very helpful because they allow us to differentiate between the various actions of the same general type. Some questions to answer about the action codes:
 
 1.  Which actions have codes?
-2. How many actions are missing codes?
+2.  How many actions are missing codes?
 3.  How many actions have codes but are missing code descriptions?
 4.  For actions with a code but without a description, can we infer a description for the action?
-4.  For actions without a code, can we infer a description for the action similar to action codes?
-5.  Do we have duplicate actions?
+5.  For actions without a code, can we infer a description for the action similar to action codes?
+6.  Do we have duplicate actions?
 
 What codes do we have?
 
 ```{r}
-count(intro_actions, action_code, action_desc, sort = T)
+count(intro_actions, actions_code, action_desc, sort = T)
 ```
 
 How many actions are coded?
 
 ```{r}
-nrow(intro_actions[!is.na(intro_actions$action_code), ])
+nrow(intro_actions[!is.na(intro_actions$actions_code), ])
 ```
 
 How many actions are coded but missing descriptions?
 
 ```{r}
-nrow(intro_actions[!is.na(intro_actions$action_code) & is.na(intro_actions$action_desc), ])
+nrow(intro_actions[!is.na(intro_actions$actions_code) & is.na(intro_actions$action_desc), ])
 ```
 
 ### Missing description
@@ -402,11 +401,11 @@ Can we come up with a description for action codes based on the text of their ac
 ```{r}
 intro_actions %>% 
   # Filter actions with action codes but no action description
-  filter(!is.na(action_code), is.na(action_desc)) %>% 
+  filter(!is.na(actions_code), is.na(action_desc)) %>% 
   # Arrange data to compare text for action codes
-  select(action_code, action_text, bill_id, action_date, everything()) %>% 
-  arrange(action_code, bill_id) %>% 
-  group_split(action_code)# %>% 
+  select(actions_code, actions_text, bill_id, actions_date, everything()) %>% 
+  arrange(actions_code, bill_id) %>% 
+  group_split(actions_code)# %>% 
   # View("Intro action codes w/o descriptions")
 ```
 
@@ -432,8 +431,8 @@ Put these codes into a tibble to join on action code.
 
 ```{r}
 # Put these codes into a table
-(intro_action_codes = tribble(
-  ~action_code, ~action_code_desc,
+(intro_actions_codes = tribble(
+  ~actions_code, ~actions_code_desc,
   "1000", "Introduced in House",
   "Intro-H", "Introduced in House",
   "10000", "Introduced in Senate",
@@ -445,21 +444,20 @@ Put these codes into a tibble to join on action code.
 
 ### Missing code
 
-For actions without a code, can we can we infer a description for the action similar to action codes?
-Below I count the instances of `action_text` to see which occur most often. 
+For actions without a code, can we can we infer a description for the action similar to action codes? Below I count the instances of `action_text` to see which occur most often.
 
 ```{r}
 (intro_actions_missing_code = intro_actions %>% 
   # Filter actions with action codes but no action description
-  filter(is.na(action_code))) %>% 
-  count(action_text, sort = T)
+  filter(is.na(actions_code))) %>% 
+  count(actions_text, sort = T)
 ```
 
 These seem to be senate bill introduction and committee referral actions. We can verify where they're coming from with the action source name.
 
 ```{r}
 intro_actions_missing_code %>% 
-  count(action_source_name, sort = T)
+  count(actions_source_system_name, sort = T)
 ```
 
 ::: callout-caution
@@ -494,8 +492,8 @@ Split the actions with no codes into two categories using regex:
 intro_actions_missing_code %>%
   # Assign actions to category based on their text
   mutate(action_desc = case_when(
-    str_detect(action_text, "[Rr]eferred to the (Select\\s)?Committee") ~ "Referred to Committee",
-    str_detect(action_text, "Received in the Senate") ~ "Received in the Senate"
+    str_detect(actions_text, "[Rr]eferred to the (Select\\s)?Committee") ~ "Referred to Committee",
+    str_detect(actions_text, "Received in the Senate") ~ "Received in the Senate"
   )) %>% 
   count(action_desc, sort = T)
 ```
@@ -505,34 +503,34 @@ Join our action codes to intro actions and fill in missing descriptions using th
 ```{r}
 (intro_actions_coded = intro_actions %>%
   # Join action codes
-  left_join(intro_action_codes, by = "action_code") %>% 
+  left_join(intro_actions_codes, by = "actions_code") %>% 
   # Assign actions to category based on their text when missing action code
-  mutate(action_code_desc = case_when(
-    !is.na(action_code_desc) ~ action_code_desc,
-    str_detect(action_text, "[Rr]eferred to the (Select\\s)?Committee") ~ "Referred to Committee",
-    str_detect(action_text, "Received in the Senate") ~ "Received in the Senate"
+  mutate(actions_code_desc = case_when(
+    !is.na(actions_code_desc) ~ actions_code_desc,
+    str_detect(actions_text, "[Rr]eferred to the (Select\\s)?Committee") ~ "Referred to Committee",
+    str_detect(actions_text, "Received in the Senate") ~ "Received in the Senate"
   ))) %>% 
-  count(action_code, action_code_desc)
+  count(actions_code, actions_code_desc)
 ```
 
 ```{r}
 #| eval: false
 (actions_intro_coded = actions_intro_dedupe %>% 
     # Create action category variable
-  mutate(action_cat = case_when(
+  mutate(actions_cat = case_when(
     !is.na(action_desc) ~ action_desc,
     # Specify coded actions
-    action_code == "B00100" ~ "Sponsor introductory remarks",
-    action_code == "H11100" ~ "Referred to committee",
-    action_code == "H11210" ~ "House committee granted an extension for further consideration",
+    actions_code == "B00100" ~ "Sponsor introductory remarks",
+    actions_code == "H11100" ~ "Referred to committee",
+    actions_code == "H11210" ~ "House committee granted an extension for further consideration",
     # Specify uncoded actions
-    str_detect(action_text, "Referred to the Committee") ~ "Referred to committee",
-    str_detect(action_text, "^Read (twice|the second time) and referred") ~ "Read twice and referred to committee",
-    str_detect(action_text, "Received in the Senate and Read twice and referred") ~ "Received in the Senate, read twice, and referred to committee",
-    str_detect(action_text, "Received in the Senate and referred") ~ "Received in the Senate and referred to committee",
-    action_type == "IntroReferral" ~ action_text
+    str_detect(actions_text, "Referred to the Committee") ~ "Referred to committee",
+    str_detect(actions_text, "^Read (twice|the second time) and referred") ~ "Read twice and referred to committee",
+    str_detect(actions_text, "Received in the Senate and Read twice and referred") ~ "Received in the Senate, read twice, and referred to committee",
+    str_detect(actions_text, "Received in the Senate and referred") ~ "Received in the Senate and referred to committee",
+    actions_type == "IntroReferral" ~ actions_text
   ))) %>% 
-  count(action_cat, sort = T)
+  count(actions_cat, sort = T)
 ```
 
 ## Committee
@@ -541,7 +539,7 @@ What actions do we have for committees?
 
 ```{r}
 (committee_actions = actions_joined %>% 
-  filter(action_type == "Committee")) %>% 
+  filter(actions_type == "Committee")) %>% 
   glimpse(80)
 ```
 
@@ -572,19 +570,19 @@ An important aspect of cleaning the actions data is to identify the following:
 What codes do we have?
 
 ```{r}
-count(committee_actions, action_code, action_desc, sort = T)
+count(committee_actions, actions_code, action_desc, sort = T)
 ```
 
 How many actions are coded?
 
 ```{r}
-nrow(committee_actions[!is.na(committee_actions$action_code),])
+nrow(committee_actions[!is.na(committee_actions$actions_code),])
 ```
 
 How many actions are coded but missing descriptions?
 
 ```{r}
-nrow(committee_actions[!is.na(committee_actions$action_code)&is.na(committee_actions$action_desc),])
+nrow(committee_actions[!is.na(committee_actions$actions_code)&is.na(committee_actions$action_desc),])
 ```
 
 ### Missing description
@@ -596,10 +594,10 @@ Can we tell what they are?
 ```{r}
 committee_actions %>% 
   # Filter actions with action codes but no action description
-  filter(!is.na(action_code), is.na(action_desc)) %>% 
-  select(action_code, action_text, bill_id, action_date, everything()) %>% 
-  arrange(action_code, bill_id) %>% 
-  group_split(action_code)
+  filter(!is.na(actions_code), is.na(action_desc)) %>% 
+  select(actions_code, actions_text, bill_id, actions_date, everything()) %>% 
+  arrange(actions_code, bill_id) %>% 
+  group_split(actions_code)
 ```
 
 `H12200` and `H12100` look similar but might not be identical. `H12200` denotes actions reported by a committee (sometimes amended), while `H12100` denotes committees reporting an original measure.
@@ -608,7 +606,7 @@ Do bills have both?
 
 ```{r}
 committee_actions %>% 
-  filter(action_code %in% c("H12200", "H12100")) %>% 
+  filter(actions_code %in% c("H12200", "H12100")) %>% 
   add_count(bill_id) %>% 
   count(n)
 ```
@@ -630,8 +628,8 @@ Below is a table of action codes and a code description, either provided by govi
 : Committee Action Codes
 
 ```{r}
-(committee_action_codes = tribble(
-  ~action_code, ~action_code_desc,
+(committee_actions_codes = tribble(
+  ~actions_code, ~actions_code_desc,
   "14000", "Reported to Senate",
   "14500", "Senate committee discharged",
   "5000", "Reported to House",
@@ -648,8 +646,8 @@ In cases where the action does not have a code, can we come up with an action su
 
 ```{r}
 committee_actions %>% 
-  filter(is.na(action_code)) %>% 
-  count(action_text, sort = T)# %>% 
+  filter(is.na(actions_code)) %>% 
+  count(actions_text, sort = T)# %>% 
   # View("committee action texts")
 ```
 
@@ -677,63 +675,63 @@ Before we categorize the actions without an action code, join the action descrip
 
 ```{r}
 committee_actions_joined = committee_actions %>% 
-  left_join(committee_action_codes, by = "action_code")
+  left_join(committee_actions_codes, by = "actions_code")
 ```
 
 ```{r}
 (committee_actions_coded = committee_actions_joined %>% 
-  mutate(action_code_desc = case_when(
-    !is.na(action_code_desc) ~ action_code_desc,
-    str_detect(action_text, 
+  mutate(actions_code_desc = case_when(
+    !is.na(actions_code_desc) ~ actions_code_desc,
+    str_detect(actions_text, 
                "Referred to the Subcommittee") ~ "Referred to subcommittee",
-    str_detect(action_text,
+    str_detect(actions_text,
                "Ordered to be reported without amendment") ~ "Ordered to be reported without amendment",
-    str_detect(action_text, 
+    str_detect(actions_text, 
                "Ordered to be reported with an amendment in the nature of a substitute") ~ "Ordered to be reported with an amendment in the nature of a substitute",
-    str_detect(action_text,
+    str_detect(actions_text,
                "Ordered to be [Rr]eported (\\(Amended\\)|with (an )?amendments?)") ~ "Ordered to be reported (amended)",
-    str_detect(action_text,
+    str_detect(actions_text,
                "Ordered to be Reported in the Nature of a Substitute") ~ "Ordered to be reported in the nature of a substitute",
-    str_detect(action_text,
+    str_detect(actions_text,
                "Ordered to be [Rr]eported") ~ "Ordered to be reported",
-    str_detect(action_text,
+    str_detect(actions_text,
                "[Rr]eported(\\sby Senator [A-z\\s0-9\\/]+)? with (an )?amendments?") ~ "Reported with amendment(s)",
-    str_detect(action_text,
+    str_detect(actions_text,
                "[Rr]eported(\\sby Senator [A-z\\s0-9\\/]+)? without amendment") ~ "Reported without amendment",
-    str_detect(action_text, 
+    str_detect(actions_text, 
                "Original measure reported to Senate") ~ "Original measure reported to Senate",
-    str_detect(action_text, 
+    str_detect(actions_text, 
                "Subcommittee(\\son\\s[A-z\\s\\,]+\\.)? Hearings [Hh]eld\\.") ~ "Subcommittee Hearings held",
-    str_detect(action_text,
+    str_detect(actions_text,
                "Subcommittee (for|on) [A-z\\s\\,]+ held a hearing") ~ "Subcommittee Hearings held",
-    str_detect(action_text,
+    str_detect(actions_text,
                "^hearing held by Subcommittee [A-z\\s\\,]+") ~ "Subcommittee Hearings held",
-    str_detect(action_text, 
+    str_detect(actions_text, 
                "Committee(\\son\\s[A-z\\s\\,\\']+\\.)? Hearings [Hh]eld\\.") ~ "Committee Hearings held",
-    str_detect(action_text, 
+    str_detect(actions_text, 
                "Committee consideration held") ~ "Committee consideration held",
-    str_detect(action_text, 
+    str_detect(actions_text, 
                "Committee [Cc]onsideration and Mark[\\s\\-]?[Uu]p") ~ "Committee Mark-up Session",
-    str_detect(action_text, 
+    str_detect(actions_text, 
                "Subcommittee Consideration and Mark\\-up") ~ "Subcommittee Mark-up Session",
-    str_detect(action_text,
+    str_detect(actions_text,
                "Failed to report favorably") ~ "Failed to report favorably",
-    str_detect(action_text,
+    str_detect(actions_text,
                "Executive Comment Received") ~ "Executive comment received",
-    str_detect(action_text,
+    str_detect(actions_text,
                "Executive Comment Requested") ~ "Executive comment requested",
-    str_detect(action_text,
+    str_detect(actions_text,
                "Forwarded by Subcommittee to Full Committee") ~ "Forwarded to full committee",
-    str_detect(action_text,
+    str_detect(actions_text,
                "Subcommittee (.+) Discharged\\.$") ~ "Subcommittee discharged",
-    str_detect(action_text, 
+    str_detect(actions_text, 
                "Senator.+filed written report") ~ "Senator filed written report",
     # str_detect(action_text, "Ordered to be reported without amendment favorably") ~ "Ordered to be reported without amendment favorably.",
-    T ~ action_text
+    T ~ actions_text
   ))) %>% 
-  # filter(is.na(action_code_desc)) %>% 
+  # filter(is.na(actions_code_desc)) %>% 
   # select(action_text, everything()) %>% View("Missing code desc")
-  count(action_code_desc, sort = T)
+  count(actions_code_desc, sort = T)
   # Check cases which are not matched
   # filter(is.na(action_desc)) %>% 
   # count(action_text, sort = T)
@@ -747,28 +745,28 @@ The iterative process that I used to come up with these categories looked someth
 
 # 1. Look at the actions which don't have codes
 committee_actions %>% 
-  left_join(committee_action_codes, by = "action_code") %>% 
-  mutate(action_code_desc = case_when(
-    !is.na(action_code_desc) ~ action_code_desc,
+  left_join(committee_actions_codes, by = "actions_code") %>% 
+  mutate(actions_code_desc = case_when(
+    !is.na(actions_code_desc) ~ actions_code_desc,
     T ~ NA_character_)
     ) %>% 
-  filter(is.na(action_code_desc)) %>% 
+  filter(is.na(actions_code_desc)) %>% 
   select(action_text, everything()) %>% View("Missing code desc")
 
 # 2. Determine regex pattern to group related action texts
 committee_actions %>% 
-  left_join(committee_action_codes, by = "action_code") %>% 
-  mutate(action_code_desc = case_when(
-    !is.na(action_code_desc) ~ action_code_desc,
+  left_join(committee_actions_codes, by = "actions_code") %>% 
+  mutate(actions_code_desc = case_when(
+    !is.na(actions_code_desc) ~ actions_code_desc,
     # Add new cases
     str_detect(action_text, 
                "Referred to the Subcommittee") ~ "Referred to subcommittee",
     T ~ NA_character_)
     ) %>% 
   # Check the results matched by the new case regex
-  filter(action_code_desc == "Referred to subcommittee") %>% 
+  filter(actions_code_desc == "Referred to subcommittee") %>% 
   # After confirming, go back to missing cases
-  # filter(is.na(action_code_desc)) %>% 
+  # filter(is.na(actions_code_desc)) %>% 
   select(action_text, everything()) %>% View("Missing code desc")
 ```
 
@@ -778,7 +776,7 @@ View data for the bill with the most committee actions
 committee_actions_coded %>% 
   add_count(bill_id) %>% 
   filter(n == max(n)) %>% 
-  arrange(action_date) %>% View("Example committee actions bill")
+  arrange(actions_date) %>% View("Example committee actions bill")
 ```
 
 ## Floor
@@ -786,7 +784,7 @@ committee_actions_coded %>%
 ```{r}
 #| label: floor-action-codes
 (floor_actions = actions_joined %>% 
-  filter(action_type == "Floor")) %>% 
+  filter(actions_type == "Floor")) %>% 
   glimpse(80)
 ```
 
@@ -794,7 +792,7 @@ Where are floor data coming from?
 
 ```{r}
 floor_actions %>% 
-  count(action_source_name, sort = T)
+  count(actions_source_system_name, sort = T)
 ```
 
 What data is missing for floor actions?
@@ -814,19 +812,19 @@ floor_actions %>%
 What action codes do we have?
 
 ```{r}
-count(floor_actions, action_code, action_desc, sort = T)
+count(floor_actions, actions_code, action_desc, sort = T)
 ```
 
 How many actions are coded?
 
 ```{r}
-nrow(floor_actions[!is.na(floor_actions$action_code),])
+nrow(floor_actions[!is.na(floor_actions$actions_code),])
 ```
 
 How many actions are coded but missing descriptions?
 
 ```{r}
-nrow(floor_actions[!is.na(floor_actions$action_code)&is.na(floor_actions$action_desc),])
+nrow(floor_actions[!is.na(floor_actions$actions_code)&is.na(floor_actions$action_desc),])
 ```
 
 That is a lot of action codes with not a lot of descriptions.
@@ -836,9 +834,9 @@ That is a lot of action codes with not a lot of descriptions.
 ```{r}
 floor_actions %>% 
   # Filter actions with action codes but no action description
-  filter(!is.na(action_code), is.na(action_desc)) %>% 
-  count(action_code, action_text) %>% 
-  arrange(action_code, desc(n))# %>% 
+  filter(!is.na(actions_code), is.na(action_desc)) %>% 
+  count(actions_code, actions_text) %>% 
+  arrange(actions_code, desc(n))# %>% 
   # View("Floor Action Codes")
 ```
 
@@ -961,8 +959,8 @@ floor_actions %>%
 : Floor Action Codes
 
 ```{r}
-floor_action_codes = tribble(
-  ~action_code, ~action_desc,
+floor_actions_codes = tribble(
+  ~actions_code, ~action_desc,
   "17000", "Passed/agreed to in Senate",
   "8000", "Passed/agreed to in House",
   "9000", "Failed of passage/not agreed to in House",
@@ -995,12 +993,12 @@ floor_action_codes = tribble(
 Even within action code, there appears to be different actions in some cases
 
 ```{r}
-floor_ambiguous_action_codes = c("H1B000", "H12700", "H30000", "H30200", "H36600", "H36610", "H8D000")
+floor_ambiguous_actions_codes = c("H1B000", "H12700", "H30000", "H30200", "H36600", "H36610", "H8D000")
 
 floor_actions %>% 
-  filter(action_code %in% floor_ambiguous_action_codes) %>% 
-  select(action_text, action_code, everything()) %>% 
-  group_split(action_code)
+  filter(actions_code %in% floor_ambiguous_actions_codes) %>% 
+  select(actions_text, actions_code, everything()) %>% 
+  group_split(actions_code)
 ```
 
 ### Missing code
@@ -1008,8 +1006,8 @@ floor_actions %>%
 ```{r}
 #| label: floor-missing-codes
 floor_actions %>% 
-  filter(is.na(action_code)) %>% 
-  count(action_text, sort = T)# %>% 
+  filter(is.na(actions_code)) %>% 
+  count(actions_text, sort = T)# %>% 
   # View("Floor Actions missing codes")
 ```
 
@@ -1052,14 +1050,14 @@ Floor actions which do not have an action code appear to be Senate actions, but 
 ```{r}
 #| label: discharge-action-codes
 discharge_actions = actions_joined %>% 
-  filter(action_type == "Discharge")
+  filter(actions_type == "Discharge")
 ```
 
 Where are discharge data coming from?
 
 ```{r}
 discharge_actions %>% 
-  count(action_source_name, sort = T)
+  count(actions_source_system_name, sort = T)
 ```
 
 ```{r}
@@ -1078,7 +1076,7 @@ What action codes do we have?
 
 ```{r}
 discharge_actions %>% 
-  count(action_code, action_desc, sort = T)
+  count(actions_code, action_desc, sort = T)
 ```
 
 ### Missing description
@@ -1086,22 +1084,22 @@ discharge_actions %>%
 ```{r}
 discharge_actions %>% 
   # Filter actions with action codes but no action description
-  filter(!is.na(action_code), is.na(action_desc)) %>% 
-  count(action_code, action_text) %>% 
-  arrange(action_code, desc(n))# %>% 
+  filter(!is.na(actions_code), is.na(action_desc)) %>% 
+  count(actions_code, actions_text) %>% 
+  arrange(actions_code, desc(n))# %>% 
   # View("Discharge Action Codes")
 ```
 
 ```{r}
 #| label: discharge-actions
 discharge_actions %>% 
-  add_count(action_code, name = "action_code_count") %>% 
+  add_count(actions_code, name = "actions_code_count") %>% 
   # Select distinct action codes and their descriptions
-  distinct(action_code, action_code_count,
-           action_desc, action_text_trunc = str_trunc(action_text, width = 60),
-           action_text) %>%
+  distinct(actions_code, actions_code_count,
+           action_desc, actions_text_trunc = str_trunc(actions_text, width = 60),
+           actions_text) %>%
   # sort by frequency
-  arrange(desc(action_code_count), action_code) %>% 
+  arrange(desc(actions_code_count), actions_code) %>% 
   head()# %>% 
   # View("Discharge Action Codes")
 
@@ -1120,14 +1118,14 @@ discharge_actions %>%
 ```{r}
 #| label: president-action-codes
 president_actions = actions_joined %>% 
-  filter(action_type == "President")
+  filter(actions_type == "President")
 ```
 
 Where are president data coming from?
 
 ```{r}
 president_actions %>% 
-  count(action_source_name, sort = T)
+  count(actions_source_system_name, sort = T)
 ```
 
 ```{r}
@@ -1146,7 +1144,7 @@ What action codes do we have?
 
 ```{r}
 president_actions %>% 
-  count(action_code, action_desc, sort = T)
+  count(actions_code, action_desc, sort = T)
 ```
 
 ### Missing description
@@ -1154,22 +1152,22 @@ president_actions %>%
 ```{r}
 president_actions %>% 
   # Filter actions with action codes but no action description
-  filter(!is.na(action_code), is.na(action_desc)) %>% 
-  count(action_code, action_text) %>% 
-  arrange(action_code, desc(n))# %>% 
+  filter(!is.na(actions_code), is.na(action_desc)) %>% 
+  count(actions_code, actions_text) %>% 
+  arrange(actions_code, desc(n))# %>% 
   # View("Discharge Action Codes")
 ```
 
 ```{r}
 #| label: president-actions
 president_actions %>% 
-  add_count(action_code, name = "action_code_count") %>% 
+  add_count(actions_code, name = "actions_code_count") %>% 
   # Select distinct action codes and their descriptions
-  distinct(action_code, action_code_count,
-           action_desc, action_text_trunc = str_trunc(action_text, width = 60),
-           action_text) %>%
+  distinct(actions_code, actions_code_count,
+           action_desc, actions_text_trunc = str_trunc(actions_text, width = 60),
+           actions_text) %>%
   # sort by frequency
-  arrange(desc(action_code_count), action_code) %>% 
+  arrange(desc(actions_code_count), actions_code) %>% 
   head()# %>% 
   # View("President Action Codes")
 ```
@@ -1187,22 +1185,22 @@ president_actions %>%
 ```{r}
 #| label:  becamelaw-action-codes
 actions_joined %>% 
-  filter(action_type == "BecameLaw") %>% 
-  count(action_source_name, action_code, sort = T)
+  filter(actions_type == "BecameLaw") %>% 
+  count(actions_source_system_name, actions_code, sort = T)
 
 ```
 
 ```{r}
 #| label: becamelaw-actions
 actions_joined %>% 
-  filter(action_type == "BecameLaw") %>% 
-  add_count(action_code, name = "action_code_count") %>% 
+  filter(actions_type == "BecameLaw") %>% 
+  add_count(actions_code, name = "actions_code_count") %>% 
   # Select distinct action codes and their descriptions
-  distinct(action_code, action_code_count,
-           action_desc, action_text_trunc = str_trunc(action_text, width = 60),
-           action_text) %>%
+  distinct(actions_code, actions_code_count,
+           action_desc, actions_text_trunc = str_trunc(actions_text, width = 60),
+           actions_text) %>%
   # sort by frequency
-  arrange(desc(action_code_count), action_code) %>% 
+  arrange(desc(actions_code_count), actions_code) %>% 
   head()# %>% 
   # View("Became Law Action Codes")
 ```
@@ -1218,23 +1216,24 @@ actions_joined %>%
 ```{r}
 #| label:  missing-actions
 actions_joined %>% 
-  filter(action_type == "(Missing Action Type)") %>% 
-  count(action_source_name, action_code) %>% 
-  arrange(action_code, desc(n))
+  filter(actions_type == "(Missing Action Type)") %>% 
+  count(actions_source_system_name, actions_code) %>% 
+  arrange(actions_code, desc(n))
 
 ```
+
 
 ```{r}
 #| label:  missing-action-codes
 actions_joined %>% 
-  filter(action_type == "(Missing Action Type)") %>% 
-  add_count(action_code, name = "action_code_count") %>% 
+  filter(actions_type == "(Missing Action Type)") %>% 
+  add_count(actions_code, name = "actions_code_count") %>% 
   # Select distinct action codes and their descriptions
-  distinct(action_source_name, action_code, action_code_count,
-           action_desc, action_text_trunc = str_trunc(action_text, width = 60),
-           action_text) %>%
+  distinct(actions_source_system_name, actions_code, actions_code_count,
+           action_desc, actions_text_trunc = str_trunc(actions_text, width = 60),
+           actions_text) %>%
   # sort by frequency
-  arrange(desc(action_code_count), action_code) %>% 
+  arrange(desc(actions_code_count), actions_code) %>% 
   head()# %>% 
   # View("Missing Type Action Codes")
 ```
