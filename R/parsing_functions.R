@@ -223,19 +223,19 @@ format_date_api = function(date){
 #' @examples
 parse_committee = function(committee){
   # Flatten committee activity data into tibble
-  committee_tibbled = map_at(committee, "activities", map, list_flatten) %>% 
-    map_at("activities", map, as_tibble) %>% 
-    map_at("activities", list_rbind) %>% 
+  committee_tibbled = map_at(committee, "activities", map, list_flatten) |> 
+    map_at("activities", map, as_tibble) |> 
+    map_at("activities", list_rbind) |> 
     # Flatten subcommittee data within committee
     map_at("subcommittees", function(subcommittee){
-      map(subcommittee, parse_subcommittee) %>% 
+      map(subcommittee, parse_subcommittee) |> 
         list_rbind()
     })
   
   # Remove tibble to flatten then recombine
-  committee_df = discard(committee_tibbled, is_tibble) %>% 
-    list_flatten() %>% 
-    as_tibble() %>% 
+  committee_df = discard(committee_tibbled, is_tibble) |> 
+    list_flatten() |> 
+    as_tibble() |> 
     mutate(activities = list(committee_tibbled$activities),
            subcommittees = list(committee_tibbled$subcommittees))
   
@@ -262,14 +262,14 @@ parse_subcommittee = function(subcommittee){
   #     > date
   
   # Flatten subcommittee data into tibble
-  subcommittee_tibbled = map_at(subcommittee, "activities", map, list_flatten, name_spec = "{outer}") %>% 
-    map_at("activities", map, as_tibble) %>% 
+  subcommittee_tibbled = map_at(subcommittee, "activities", map, list_flatten, name_spec = "{outer}") |> 
+    map_at("activities", map, as_tibble) |> 
     map_at("activities", list_rbind)
   
   # Remove tibble to flatten then recombine
-  discard(subcommittee_tibbled, is_tibble) %>% 
-    list_flatten() %>% 
-    as_tibble() %>% 
+  discard(subcommittee_tibbled, is_tibble) |> 
+    list_flatten() |> 
+    as_tibble() |> 
     mutate(activities = list(subcommittee_tibbled$activities))
   
 }
@@ -303,23 +303,23 @@ parse_vote_roll = function(vote, chamber){
     legislators_list = as_list(xml_find_all(vote_xml, "vote-data/recorded-vote"))
     
     # Flatten votes into tibble
-    legislator_vote_df = legislators_list %>% 
+    legislator_vote_df = legislators_list |> 
       # Modify one level deeper using map_at to target legislator elements
-      map(map_at, "legislator", attributes) %>% 
-      map(list_flatten) %>% 
-      map(as_tibble) %>% 
-      list_rbind() %>% 
+      map(map_at, "legislator", attributes) |> 
+      map(list_flatten) |> 
+      map(as_tibble) |> 
+      list_rbind() |> 
       janitor::clean_names()
     
     # Vote metadata
     vote_singular_nodes = xml_find_all(vote_xml, "vote-metadata/*[count(./*) = 0]")
     
-    vote_df = as_list(vote_singular_nodes) %>% 
+    vote_df = as_list(vote_singular_nodes) |> 
       # as_list() doesn't retain element names so we set names ourselves
-      setNames(xml_name(vote_singular_nodes)) %>% 
-      list_flatten() %>% 
-      as_tibble() %>% 
-      janitor::clean_names() %>% 
+      setNames(xml_name(vote_singular_nodes)) |> 
+      list_flatten() |> 
+      as_tibble() |> 
+      janitor::clean_names() |> 
       # Remove duplicated columns
       select(-any_of(c("congress", "chamber", "session", "legis_num")))
     
@@ -328,14 +328,14 @@ parse_vote_roll = function(vote, chamber){
     vote_totals_by_party = xml_find_all(vote_xml, "vote-metadata/vote-totals/totals-by-party")
     
     
-    party_vote_totals_df = as_list(vote_totals_by_party) %>% 
+    party_vote_totals_df = as_list(vote_totals_by_party) |> 
       # Flatten each party list
-      map(list_flatten) %>% 
+      map(list_flatten) |> 
       # Convert each list to a tibble
-      map(as_tibble) %>% 
+      map(as_tibble) |> 
       # Combine as rows
-      list_rbind() %>% 
-      janitor::clean_names() %>% 
+      list_rbind() |> 
+      janitor::clean_names() |> 
       type_convert(col_types = cols(
         party = col_character(),
         yea_total = col_double(),
@@ -344,62 +344,62 @@ parse_vote_roll = function(vote, chamber){
         not_voting_total = col_double()
       ))
     
-    vote_df %>% 
-      rename_with(~str_remove(., "^vote_")) %>% 
+    vote_df |> 
+      rename_with(~str_remove(., "^vote_")) |> 
       mutate(legislator_votes = list(legislator_vote_df),
-             party_votes = list(party_vote_totals_df)) %>% 
+             party_votes = list(party_vote_totals_df)) |> 
       janitor::clean_names()
     
   } else {
     # Singular nodes
     vote_singular_nodes = xml_find_all(vote_xml, "*[count(./*) = 0]")
     
-    singular_df = as_list(vote_singular_nodes) %>% 
-      set_names(xml_name(vote_singular_nodes)) %>% 
-      list_flatten() %>% 
-      as_tibble() %>% 
+    singular_df = as_list(vote_singular_nodes) |> 
+      set_names(xml_name(vote_singular_nodes)) |> 
+      list_flatten() |> 
+      as_tibble() |> 
       select(-congress, -session, -congress_year)
     
     # Document
-    # vote_document = xml_child(vote_xml, "document") %>% 
-    #   as_list() %>% 
+    # vote_document = xml_child(vote_xml, "document") |> 
+    #   as_list() |> 
     #   flatten_dfc()
     
     # Amendment
-    vote_amendment = xml_child(vote_xml, "amendment") %>% 
-      as_list() %>% 
-      list_flatten() %>% 
+    vote_amendment = xml_child(vote_xml, "amendment") |> 
+      as_list() |> 
+      list_flatten() |> 
       as_tibble()
     
     # Vote count
-    vote_count = xml_child(vote_xml, "count") %>% 
-      as_list() %>% 
-      list_flatten() %>% 
+    vote_count = xml_child(vote_xml, "count") |> 
+      as_list() |> 
+      list_flatten() |> 
       as_tibble()
     # Tie breaker
-    vote_tie_breaker = xml_child(vote_xml, "tie_breaker") %>% 
-      as_list() %>% 
-      list_flatten() %>% 
+    vote_tie_breaker = xml_child(vote_xml, "tie_breaker") |> 
+      as_list() |> 
+      list_flatten() |> 
       as_tibble()
     
     # Vote Members
-    vote_members = xml_child(vote_xml, "members") %>% 
-      as_list() %>% 
-      map(list_flatten) %>% 
-      map(as_tibble) %>% 
+    vote_members = xml_child(vote_xml, "members") |> 
+      as_list() |> 
+      map(list_flatten) |> 
+      map(as_tibble) |> 
       list_rbind()
     
     vote_df = list(
       singular_df, vote_amendment, vote_count, vote_tie_breaker
-    ) %>% 
+    ) |> 
       # Remove elements with no data
-      # keep(~(nrow(.) > 0)) %>% 
-      compact() %>% 
+      # keep(~(nrow(.) > 0)) |> 
+      compact() |> 
       list_cbind()
     
-    vote_df %>% 
-      rename_with(~str_remove(., "^vote_")) %>% 
-      mutate(legislator_votes = list(vote_members)) %>% 
+    vote_df |> 
+      rename_with(~str_remove(., "^vote_")) |> 
+      mutate(legislator_votes = list(vote_members)) |> 
       janitor::clean_names()
   }
 
@@ -437,22 +437,22 @@ parse_action = function(action){
   #       The XML files are inconsistent in having separate action items and separate committee sub-items when
   #       an action is related to two committees
   # Solution: Treat each committee referral as separate action
-  actions_df = discard_at(action, c("recordedVotes", "committees")) %>% 
+  actions_df = discard_at(action, c("recordedVotes", "committees")) |> 
     # Flatten source columns, calendar number, and committee data
-    map_at(c("sourceSystem", "calendarNumber"), list_flatten) %>% 
+    map_at(c("sourceSystem", "calendarNumber"), list_flatten) |> 
     # Flatten the list into a df
-    list_flatten() %>% 
+    list_flatten() |> 
     as_tibble()
   
   # Parse committees
   if(length(committees)>0){
-    committees_df = committees %>% 
+    committees_df = committees |> 
       # Flatten list of committee elements
-      map(map, list_flatten) %>% 
+      map(map, list_flatten) |> 
       # Convert to tibble
-      map(map, as_tibble) %>% 
+      map(map, as_tibble) |> 
       # Combine into rows
-      list_flatten() %>% 
+      list_flatten() |> 
       list_rbind()
     # Add in committees
     actions_df = mutate(actions_df, committees = list(committees_df))
@@ -460,7 +460,7 @@ parse_action = function(action){
   
   # Parse votes
   if(length(votes)>0){
-    votes_df = as_tibble(list_flatten(votes$recordedVotes$recordedVote)) %>% 
+    votes_df = as_tibble(list_flatten(votes$recordedVotes$recordedVote)) |> 
       mutate(vote = map2(url, chamber, parse_vote_roll))
     
     # Add in vote
@@ -479,8 +479,8 @@ parse_amendment = function(amendment){
 }
 
 parse_sponsor = function(sponsor){
-  map_at(sponsor, "identifiers", list_flatten) %>% 
-    list_flatten() %>% 
+  map_at(sponsor, "identifiers", list_flatten) |> 
+    list_flatten() |> 
     as_tibble()
 }
 
@@ -584,37 +584,37 @@ extract_bill_status = function(xml_file,
   bill_subjects = map_chr(as_list(xml_find_all(bill_xml, "subjects/legislativeSubjects/item/name")),
                           list_simplify)
   ## Summaries
-  bill_summaries = map(as_list(xml_find_all(bill_xml, "summaries/summary")), list_flatten) %>% 
-    map(as_tibble) %>% 
+  bill_summaries = map(as_list(xml_find_all(bill_xml, "summaries/summary")), list_flatten) |> 
+    map(as_tibble) |> 
     list_rbind()
   
   ## Titles
-  bill_titles = map(as_list(xml_find_all(bill_xml, "titles/item")), list_flatten) %>%
-    map(as_tibble) %>% 
+  bill_titles = map(as_list(xml_find_all(bill_xml, "titles/item")), list_flatten) |>
+    map(as_tibble) |> 
     list_rbind()
   
   ## Text versions
   bill_text_versions = map(as_list(xml_find_all(bill_xml, "textVersions/item")),
-                           map_at, "formats", list_flatten) %>% 
-    map(list_flatten) %>% 
-    map(list_flatten) %>% 
-    map(as_tibble) %>% 
+                           map_at, "formats", list_flatten) |> 
+    map(list_flatten) |> 
+    map(list_flatten) |> 
+    map(as_tibble) |> 
     list_rbind()
   
   #TODO: Parse bill text version format data
   ## Latest action
-  latest_action = as_list(xml_find_all(bill_xml, "latestAction")) %>% 
-    list_flatten() %>% 
-    list_flatten() %>% 
-    as_tibble() %>% 
+  latest_action = as_list(xml_find_all(bill_xml, "latestAction")) |> 
+    list_flatten() |> 
+    list_flatten() |> 
+    as_tibble() |> 
     rename_with(~str_c("latestAction_", .))
   
-  # bill_df = bill_df %>% 
+  # bill_df = bill_df |> 
   #   mutate(policy_areas = list(policy_areas),
   #          legislative_subjects = list(bill_subjects),
   #          bill_summaries = list(bill_summaries),
   #          bill_titles = list(bill_titles),
-  #          bill_text_versions = list(bill_text_versions)) %>% 
+  #          bill_text_versions = list(bill_text_versions)) |> 
   #   bind_cols(latest_action)
   # Combine bill-level attributes
   bill_df$policy_areas = list(policy_areas)
@@ -624,7 +624,7 @@ extract_bill_status = function(xml_file,
   bill_df$text_versions = list(bill_text_versions)
   
   
-  bill_df = bind_cols(bill_df, latest_action) %>% 
+  bill_df = bind_cols(bill_df, latest_action) |> 
     # While files are not fully reprocessed, remove bill prefix
     rename_with(~str_remove(., "^bill"))
 
@@ -677,7 +677,7 @@ extract_bill_status = function(xml_file,
   #                            logger = logger, 
   #                            bill_type = bill_df$type,
   #                            bill_num = bill_df$number),
-  #            roll_found = map_lgl(vote_roll, ~(nrow(.) > 0))) %>% 
+  #            roll_found = map_lgl(vote_roll, ~(nrow(.) > 0))) |> 
   #     janitor::clean_names()
   #   
   #   bill_df$house_votes = list(filter(vote_rolls_df, chamber == "House"))
@@ -698,16 +698,16 @@ extract_bill_status = function(xml_file,
   if("actions" %in% nested_attributes && length(bill_actions)>0){
 
     # Action counts not found in Senate bill 3271
-    # bill_action_counts = as_list(xml_find_all(bill_xml, "//bill/actions/*[not(self::item)]")) %>% 
-    #   map_dfc(flatten_dfc) %>% 
-    #   rename_with(.cols = everything(), ~str_c("actions_", .)) %>% 
+    # bill_action_counts = as_list(xml_find_all(bill_xml, "//bill/actions/*[not(self::item)]")) |> 
+    #   map_dfc(flatten_dfc) |> 
+    #   rename_with(.cols = everything(), ~str_c("actions_", .)) |> 
     #   pivot_longer(everything(), names_to = "action", names_prefix = "actions_", values_to = "count")
     
     # Coerce nodes to list
-    actions_df = as_list(bill_actions) %>% 
-      map(parse_action) %>% 
-      list_rbind() %>% 
-      type_convert(col_types = col_specs$actions) %>% 
+    actions_df = as_list(bill_actions) |> 
+      map(parse_action) |> 
+      list_rbind() |> 
+      type_convert(col_types = col_specs$actions) |> 
       janitor::clean_names()
     
     bill_df$actions = list(actions_df)
@@ -728,7 +728,7 @@ extract_bill_status = function(xml_file,
   #   browser()
   #   bill_amendments = xml_find_all(amendments_node, "amendment")
   #   # Coerce nodes to list
-  #   amendments_df = map(bill_amendments, as_list) %>% 
+  #   amendments_df = map(bill_amendments, as_list) |> 
   #     map_dfr(parse_action)
   #   
   #   bill_df$amendments = list(amendments_df)
@@ -747,9 +747,9 @@ extract_bill_status = function(xml_file,
   if("sponsors" %in% nested_attributes && length(bill_sponsors)>0){
 
     # Coerce nodes to list
-    sponsors_df = as_list(bill_sponsors) %>% 
-      map(parse_sponsor) %>% 
-      list_rbind() %>% 
+    sponsors_df = as_list(bill_sponsors) |> 
+      map(parse_sponsor) |> 
+      list_rbind() |> 
       janitor::clean_names()
     
     bill_df$sponsors = list(sponsors_df)
@@ -769,17 +769,17 @@ extract_bill_status = function(xml_file,
   if("cosponsors" %in% nested_attributes && length(bill_cosponsors)>0){
     
     # Coerce nodes to list
-    cosponsors_df = as_list(bill_cosponsors) %>% 
-      map(parse_sponsor) %>% 
-      list_rbind() %>% 
+    cosponsors_df = as_list(bill_cosponsors) |> 
+      map(parse_sponsor) |> 
+      list_rbind() |> 
       janitor::clean_names()
     
     bill_df$cosponsors = list(type_convert(cosponsors_df, col_types = col_specs$cosponsors))
   } else {
     bill_df$cosponsors = list(tibble())
   }
-  finished_df = as_tibble(bill_df) %>% 
-    janitor::clean_names() %>% 
+  finished_df = as_tibble(bill_df) |> 
+    janitor::clean_names() |> 
     # Combine bill type and number to create an ID
     unite(bill_id, type, number, sep = "-", remove = F)
   
