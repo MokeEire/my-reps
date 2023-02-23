@@ -311,20 +311,7 @@ xml_singular_nodes = function(xml_node){
   keep(zero_length_child_nodes, ~(xml_text(.) != ""))
 }
 
-# attribute_tibble_templates = list(
-#   actions = tibble(
-#     actionDate = col_date(), 
-#     actionTime = col_time(),
-#     action_committee_systemCode = col_character(), 
-#     action_committee_name = col_character(), 
-#     action_source_code = col_character(),
-#     action_source_name = col_character(),
-#     action_text = col_character(), 
-#     action_type = col_character(), 
-#     actionCode = col_character()
-#   )
-# )
-
+# List of attribute column types for use with type_convert()
 attribute_col_types = list(
   actions = cols(actionDate = col_date(), 
                  actionTime = col_time(),
@@ -350,9 +337,20 @@ attribute_col_types = list(
 
 
 
+#' Extract bill status from XML
+#'
+#' @param xml_file path to XML file
+#' @param nested_attributes nested attributes to parse
+#' @param col_specs column specifications to use
+#' @param log_threshold threshold for logging
+#' @param log_types type of logger (console, file, NULL)
+#'
+#' @return
+#' @export
+#'
+#' @examples
 extract_bill_status = function(xml_file, 
                                nested_attributes = c("committees", "votes", "actions", "sponsors", "cosponsors"),
-                               get_votes = T,
                                col_specs = attribute_col_types,
                                log_threshold = "INFO",
                                log_types = c("console")){
@@ -414,13 +412,6 @@ extract_bill_status = function(xml_file,
     as_tibble() |> 
     rename_with(~str_c("latestAction_", .))
   
-  # bill_df = bill_df |> 
-  #   mutate(policy_areas = list(policy_areas),
-  #          legislative_subjects = list(bill_subjects),
-  #          bill_summaries = list(bill_summaries),
-  #          bill_titles = list(bill_titles),
-  #          bill_text_versions = list(bill_text_versions)) |> 
-  #   bind_cols(latest_action)
   # Combine bill-level attributes
   bill_df$policy_areas = list(policy_areas)
   bill_df$legislative_subjects = list(bill_subjects)
@@ -460,38 +451,7 @@ extract_bill_status = function(xml_file,
     bill_df$committees = list(tibble())
   }
   
-  # Votes ---------
-  # log_debug(logger, 
-  #          bill_type = bill_df$type,
-  #          bill_num = bill_df$number,
-  #          "Parsing votes")
-  # 
-  # votes_node = xml_find_all(bill_xml, "//bill/recordedVotes/recordedVote")
-  # 
-  # if("votes" %in% nested_attributes && length(votes_node)>0 && get_votes){
-  #   
-  #   
-  #   # Coerce nodes to list
-  #   votes_list = as_list(votes_node)
-  # 
-  #   votes_df = select(map_dfr(votes_list, flatten_dfc), -any_of(c("congress")))
-  # 
-  #   # Add Vote tallies
-  #   vote_rolls_df = mutate(votes_df,
-  #                          vote_roll = map2(url, chamber, parse_vote_roll, 
-  #                            logger = logger, 
-  #                            bill_type = bill_df$type,
-  #                            bill_num = bill_df$number),
-  #            roll_found = map_lgl(vote_roll, ~(nrow(.) > 0))) |> 
-  #     janitor::clean_names()
-  #   
-  #   bill_df$house_votes = list(filter(vote_rolls_df, chamber == "House"))
-  #   bill_df$senate_votes = list(filter(vote_rolls_df, chamber == "Senate"))
-  # } else {
-  #   bill_df$house_votes = list(tibble())
-  #   bill_df$senate_votes = list(tibble())
-  # }
-  
+
   # Actions ---------
   log_debug(logger, 
            bill_type = bill_df$type,
@@ -502,12 +462,6 @@ extract_bill_status = function(xml_file,
   
   if("actions" %in% nested_attributes && length(bill_actions)>0){
 
-    # Action counts not found in Senate bill 3271
-    # bill_action_counts = as_list(xml_find_all(bill_xml, "//bill/actions/*[not(self::item)]")) |> 
-    #   map_dfc(flatten_dfc) |> 
-    #   rename_with(.cols = everything(), ~str_c("actions_", .)) |> 
-    #   pivot_longer(everything(), names_to = "action", names_prefix = "actions_", values_to = "count")
-    
     # Coerce nodes to list
     actions_df = as_list(bill_actions) |> 
       map(parse_action) |> 
@@ -517,30 +471,11 @@ extract_bill_status = function(xml_file,
     
     bill_df$actions = list(actions_df)
     
-    # bill_df$action_counts = list(type_convert(bill_action_counts,
-    #                                           col_types = cols(action = col_character(), count = col_integer())))
   } else {
     bill_df$actions = list(tibble())
   }
   
-  # Amendments ---------
-  # log_debug(logger, 
-  #          bill_type = bill_df$type,
-  #          bill_num = bill_df$number,
-  #          "Parsing amendments")
-  # amendments_node = bill_nodesets[["amendments"]]
-  # if(xml_length(amendments_node)>0){
-  #   browser()
-  #   bill_amendments = xml_find_all(amendments_node, "amendment")
-  #   # Coerce nodes to list
-  #   amendments_df = map(bill_amendments, as_list) |> 
-  #     map_dfr(parse_action)
-  #   
-  #   bill_df$amendments = list(amendments_df)
-  # } else {
-  #   bill_df$amendments = list(tibble())
-  # }
-  
+
   # Sponsors ---------
   log_debug(logger, 
            bill_type = bill_df$type,
@@ -880,4 +815,5 @@ format_date_api = function(date){
   stopifnot(is.Date(date) || is.timepoint(date))
   format(date, "%Y-%m-%dT%H:%M:%SZ")
 }
+
 
