@@ -11,201 +11,6 @@ library(mokeR)
 library(janitor)
 
 
-# Logging functions -------------------------------------------------------
-
-log_layout = function(level, ...){
-  function(level,
-           ..., bill_type, bill_num){
-    msg = paste0(..., collapse = "")
-    
-    sprintf("%s | Bill #%s | %s | %s\n", bill_type, bill_num,
-            log4r:::fmt_current_time("%Y-%m-%d %H:%M:%S"),
-            msg)
-  }
-}
-
-create_logger = function(log_threshold = "INFO", 
-                         directory = here::here("logs"), 
-                         log_types = c("file", "console")){
-  
-  log_appenders = list()
-  if("file" %in% log_types){
-    log_file = here::here(here::here("logs"), 
-                          paste0("log-", 
-                                 format(lubridate::now(), 
-                                        "%Y-%m-%d--%H-%M-%S"), 
-                                 ".txt"))
-    
-    file.create(log_file)
-    
-    log_appenders = append(
-      log_appenders, 
-      log4r::file_appender(log_file, append = T, layout = log_layout()))
-  }
-  
-  if("console" %in% log_types){
-    
-    log_appenders = append(log_appenders, 
-                           log4r::console_appender(layout = log_layout()))
-  }
-  
-  log4r::logger(
-    threshold = log_threshold,
-    appenders = log_appenders
-  )
-}
-
-log_info = function(logger, ...){
-  if(logger$threshold > log4r:::INFO)
-    return(invisible(NULL))
-  for (appender in logger$appenders){
-    appender(level="INFO", ...)
-  }
-}
-
-log_debug = function(logger, ...){
-  if(logger$threshold > log4r:::DEBUG)
-    return(invisible(NULL))
-  for (appender in logger$appenders){
-    appender(level="DEBUG", ...)
-  }
-}
-
-read_log = function(log_file){
-  if(missing(log_file)){
-    logs = file.info(list.files(here("logs"), full.names = T))
-    log_file = row.names(logs[which.max(logs$ctime), ])
-  }
-  read_delim(log_file, delim = " | ", 
-             col_names = c("bill_type", "bill_num", "time", "action"), 
-             col_types = "ccTc") %>% 
-    group_by(bill_type, bill_num) %>% 
-    mutate(parse_time_s = time_length(max(time) - min(time), unit = "second")) %>% 
-    ungroup() %>% 
-    arrange(bill_type, bill_num, time)
-}
-
-
-# API functions -----------------------------------------------------------
-
-
-getPackages = function(packageId, summary = F, xml = T){
-  summary_url = paste0("https://api.govinfo.gov/packages/", packageId, 
-                       "/summary",
-                       "?api_key=", apiGovKey)
-  # encode the URL with characters for each space.
-  summary_json = fromJSON(URLencode(summary_url)) %>% 
-    flatten_dfc()
-  
-  if(summary){
-    return(summary_json)
-  }
-  
-  if(xml){
-    summary_json$xmlLink
-  }
-  
-  
-}
-
-
-get_package_xml = function(packageId){
-  
-  summary_url = paste0("https://api.govinfo.gov/packages/", packageId, 
-                       "/summary",
-                       "?api_key=", apiGovKey)
-  
-  # encode the URL with characters for each space.
-  fromJSON(URLencode(summary_url)) %>% 
-    pluck("download", "xmlLink")
-  
-}
-
-get_published = function(dateIssuedStartDate, dateIssuedEndDate,
-                        startingRecord = 0, numRecords = 20,
-                        collections, congress,
-                        docClass){
-  # If end date is provided, format it
-  if(missing(dateIssuedEndDate)){
-    end_date = ""
-  } else {
-    end_date = paste0("/", format_date_api(dateIssuedEndDate))
-  }
-  
-  
-  # Construct URL to request
-  url = paste0(
-    # Root
-    "https://api.govinfo.gov/published/",
-    # Start and end dates
-    # format_date_api(dateIssuedStartDate), 
-    dateIssuedStartDate,
-    end_date,
-    # Record indexing
-    "?offset=", startingRecord, "&pageSize=", numRecords, 
-    # Collection
-    "&collection=",collections,
-    ifelse(missing(congress), "", paste0("&congress=", congress)),
-    ifelse(missing(docClass), "", paste0("&docClass=", docClass)),
-    # API key
-    "&api_key=", apiGovKey
-  )
-  
-  
-  # Request URL encoded for any spaces
-  request = fromJSON(URLencode(url))
-  # Assign the packages dataframe
-  packages = request$packages
-  
-  
-  
-  # Request the next page of results while a next page exists
-  # while(!is_null(request$nextPage)){
-  while(nrow(packages)<= request$count){
-    summary_links = URLencode(paste0(packages$packageLink, "&api_key=", apiGovKey))
-    map(summary_links, fromJSON)
-    browser()
-    next_page_url = paste0(request$nextPage, "&api_key=", apiGovKey)
-    next_page = URLencode(next_page_url)
-    request = fromJSON(next_page)
-    # request = tryCatch(fromJSON(next_page), 
-    #                    error = function(e)Sys.sleep(30),
-    #                    finally = fromJSON(next_page))
-    # browser()
-    # Requests tend to fail as we approach 10k results
-    # if(nrow(packages)> 9500){
-    #   browser()
-    # }
-    # Append new results to packages
-    packages = bind_rows(packages, request$packages)
-    
-    # A tiny bit of sleep seems to reduce API errors
-    Sys.sleep(.5)
-  }
-  
-  return(packages)
-}
-
-
-# Helper functions --------------------------------------------------------
-
-
-list_flatten_rename = function(list_to_flatten, 
-                              name_prefix = "prefix"){
-  rename_with(
-    .data = as_tibble(list_flatten(list_to_flatten)), 
-    .fn = ~str_c(name_prefix, "_", .),
-    # Exclude columns which already start with the prefix
-    .cols = -starts_with(name_prefix)
-  )
-}
-
-format_date_api = function(date){
-  stopifnot(is.Date(date) || is.timepoint(date))
-  format(date, "%Y-%m-%dT%H:%M:%SZ")
-}
-
-
 # XML parsing functions ---------------------------------------------------
 
 # Using the user guide to understand the XML structure
@@ -892,3 +697,187 @@ code_actions = function(actions_df,
     ungroup() %>% 
     select(-action_type_fct, -action_time)
 }
+
+# Logging functions -------------------------------------------------------
+
+log_layout = function(level, ...){
+  function(level,
+           ..., bill_type, bill_num){
+    msg = paste0(..., collapse = "")
+    
+    sprintf("%s | Bill #%s | %s | %s\n", bill_type, bill_num,
+            log4r:::fmt_current_time("%Y-%m-%d %H:%M:%S"),
+            msg)
+  }
+}
+
+create_logger = function(log_threshold = "INFO", 
+                         directory = here::here("logs"), 
+                         log_types = c("file", "console")){
+  
+  log_appenders = list()
+  if("file" %in% log_types){
+    log_file = here::here(here::here("logs"), 
+                          paste0("log-", 
+                                 format(lubridate::now(), 
+                                        "%Y-%m-%d--%H-%M-%S"), 
+                                 ".txt"))
+    
+    file.create(log_file)
+    
+    log_appenders = append(
+      log_appenders, 
+      log4r::file_appender(log_file, append = T, layout = log_layout()))
+  }
+  
+  if("console" %in% log_types){
+    
+    log_appenders = append(log_appenders, 
+                           log4r::console_appender(layout = log_layout()))
+  }
+  
+  log4r::logger(
+    threshold = log_threshold,
+    appenders = log_appenders
+  )
+}
+
+log_info = function(logger, ...){
+  if(logger$threshold > log4r:::INFO)
+    return(invisible(NULL))
+  for (appender in logger$appenders){
+    appender(level="INFO", ...)
+  }
+}
+
+log_debug = function(logger, ...){
+  if(logger$threshold > log4r:::DEBUG)
+    return(invisible(NULL))
+  for (appender in logger$appenders){
+    appender(level="DEBUG", ...)
+  }
+}
+
+read_log = function(log_file){
+  if(missing(log_file)){
+    logs = file.info(list.files(here("logs"), full.names = T))
+    log_file = row.names(logs[which.max(logs$ctime), ])
+  }
+  read_delim(log_file, delim = " | ", 
+             col_names = c("bill_type", "bill_num", "time", "action"), 
+             col_types = "ccTc") %>% 
+    group_by(bill_type, bill_num) %>% 
+    mutate(parse_time_s = time_length(max(time) - min(time), unit = "second")) %>% 
+    ungroup() %>% 
+    arrange(bill_type, bill_num, time)
+}
+
+
+# API functions -----------------------------------------------------------
+
+
+getPackages = function(packageId, summary = F, xml = T){
+  summary_url = paste0("https://api.govinfo.gov/packages/", packageId, 
+                       "/summary",
+                       "?api_key=", apiGovKey)
+  # encode the URL with characters for each space.
+  summary_json = fromJSON(URLencode(summary_url)) %>% 
+    flatten_dfc()
+  
+  if(summary){
+    return(summary_json)
+  }
+  
+  if(xml){
+    summary_json$xmlLink
+  }
+  
+  
+}
+
+
+get_package_xml = function(packageId){
+  
+  summary_url = paste0("https://api.govinfo.gov/packages/", packageId, 
+                       "/summary",
+                       "?api_key=", apiGovKey)
+  
+  # encode the URL with characters for each space.
+  fromJSON(URLencode(summary_url)) %>% 
+    pluck("download", "xmlLink")
+  
+}
+
+get_published = function(dateIssuedStartDate, dateIssuedEndDate,
+                         startingRecord = 0, numRecords = 20,
+                         collections, congress,
+                         docClass){
+  # If end date is provided, format it
+  if(missing(dateIssuedEndDate)){
+    end_date = ""
+  } else {
+    end_date = paste0("/", format_date_api(dateIssuedEndDate))
+  }
+  
+  
+  # Construct URL to request
+  url = paste0(
+    # Root
+    "https://api.govinfo.gov/published/",
+    # Start and end dates
+    # format_date_api(dateIssuedStartDate), 
+    dateIssuedStartDate,
+    end_date,
+    # Record indexing
+    "?offset=", startingRecord, "&pageSize=", numRecords, 
+    # Collection
+    "&collection=",collections,
+    ifelse(missing(congress), "", paste0("&congress=", congress)),
+    ifelse(missing(docClass), "", paste0("&docClass=", docClass)),
+    # API key
+    "&api_key=", apiGovKey
+  )
+  
+  
+  # Request URL encoded for any spaces
+  request = fromJSON(URLencode(url))
+  # Assign the packages dataframe
+  packages = request$packages
+  
+  
+  
+  # Request the next page of results while a next page exists
+  # while(!is_null(request$nextPage)){
+  while(nrow(packages)<= request$count){
+    summary_links = URLencode(paste0(packages$packageLink, "&api_key=", apiGovKey))
+    map(summary_links, fromJSON)
+    browser()
+    next_page_url = paste0(request$nextPage, "&api_key=", apiGovKey)
+    next_page = URLencode(next_page_url)
+    request = fromJSON(next_page)
+    # request = tryCatch(fromJSON(next_page), 
+    #                    error = function(e)Sys.sleep(30),
+    #                    finally = fromJSON(next_page))
+    # browser()
+    # Requests tend to fail as we approach 10k results
+    # if(nrow(packages)> 9500){
+    #   browser()
+    # }
+    # Append new results to packages
+    packages = bind_rows(packages, request$packages)
+    
+    # A tiny bit of sleep seems to reduce API errors
+    Sys.sleep(.5)
+  }
+  
+  return(packages)
+}
+
+# Helper functions --------------------------------------------------------
+
+
+format_date_api = function(date){
+  stopifnot(is.Date(date) || is.timepoint(date))
+  format(date, "%Y-%m-%dT%H:%M:%SZ")
+}
+
