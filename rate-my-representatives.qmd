@@ -1,0 +1,57 @@
+---
+title: "Rate My Representatives"
+author: "Mark Barrett"
+format: html
+editor: visual
+---
+
+```{r}
+#| label: setup
+#| include: false
+library(extrafont)
+library(tictoc)
+library(furrr)
+library(here)
+library(reactable)
+library(reactablefmtr)
+plan(multisession)
+source("R/parsing_functions.R")
+
+# knit_print.data.frame = function(x, …){
+#   knitr::knit_print(
+#     reactable::reactable(x,
+#                      theme = moke_rt(),
+#                      compact = F, 
+#                      # fullWidth = T,
+#                      pagination = F,
+#                      height = if(nrow(x) >= 10) "400px" else "auto",
+#                      resizable = T),
+#     …
+#     )
+# }
+
+action_codes = read_csv(here("data", "action_codes.csv"), col_types = "cc")
+
+all_bills = readRDS(here("data", "cleaned", "BILLSTATUS_117.Rds"))
+actions = readRDS(here("data", "cleaned", "BILLSTATUS_117_Actions.Rds"))
+```
+
+```{r}
+glimpse(all_bills)
+```
+
+```{r}
+actions_df = unnest(all_bills, actions)
+```
+
+```{r}
+votes_df = unnest(all_bills, votes, names_sep = "_")
+
+glimpse(votes_df)
+```
+
+Vote rolls
+
+```{r}
+vote_rolls = unnest(votes_df, vote_rolls)
+```

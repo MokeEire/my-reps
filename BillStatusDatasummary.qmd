@@ -1,0 +1,99 @@
+---
+title: "Bill Status Data Summary"
+date: "`r Sys.Date()`"
+execute: 
+  warning: false
+  message: false
+format: 
+  html:
+    output-file: "`r here::here('data', paste0('billstatus_summary_', Sys.Date(), '.qmd'))`"
+    theme: litera
+    toc: true
+    code-fold: true
+    code-tools: true
+---
+
+```{r}
+#| label: setup
+#| include: false
+library(extrafont)
+library(here)
+library(reactable)
+library(reactablefmtr)
+source("R/parsing_functions.R")
+
+# Load cleaned R objects
+# Check for latest version of clean data
+clean_data = fs::dir_info(here("data", "cleaned"))
+latest_file = clean_data[which.max(clean_data$change_time), "path", drop = T]
+
+all_bills = readRDS(latest_file)
+# actions = readRDS(here("data", "cleaned", "BILLSTATUS_117_Actions.Rds"))
+```
+
+# Bill-level summary
+
+```{r}
+glimpse(all_bills)
+```
+
+```{r}
+skimr::skim(all_bills)
+```
+
+From the output above we can see the following:
+
+- There were `r scales::comma(nrow(all_bills))` bills introduced
+
+- 
+
+# Actions
+
+# Committees
+
+#
+
+Where did bills originate from?
+
+```{r}
+all_bills |> 
+  count(origin_chamber)
+```
+
+What types of bills were introduced?
+
+```{r}
+all_bills |> 
+  count(origin_chamber, type)
+```
+
+
+# Missingness
+
+
+
+## **Nested columns**
+
+```{r}
+all_bills %>% 
+  # Select columns where any items are tibbles
+  select(where(~any(map_lgl(., is_tibble)))) %>%
+  # Count the rows of each nested tibble
+  mutate(across(everything(), ~map_dbl(., nrow))) %>% 
+  # Count the number of cases with zero rows
+  summarise(across(everything(), ~sum(.==0))) %>% 
+  pivot_longer(everything(), names_to = "column", values_to = "n_missing")
+```
+
+## Committees
+
+```{r}
+all_bills %>% 
+  select(bill_id, committees) %>% 
+  unnest(committees) %>% 
+  # Count the rows of each nested tibble
+  mutate(across(where(~any(map_lgl(., is_tibble))), ~map_dbl(., nrow))) %>% 
+  summarise(across(where(negate(is_list)), ~sum(is.na(.))),
+            across(where(~any(map_lgl(., is_tibble))), ))
+```
+

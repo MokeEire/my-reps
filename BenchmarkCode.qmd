@@ -1,0 +1,99 @@
+---
+title: "Benchmarking Parse Functions"
+author: "Mark"
+format: html
+editor: visual
+---
+
+The goal of this notebook is to test the speed of the parsing functions I've written to clean and organize congress' `BILLSTATUS` data.
+
+```{r}
+bill_types = list.files(here("data", "BILLSTATUS","117"))
+
+bill_folders = here("data", "BILLSTATUS", "117", bill_types) %>% 
+    str_remove_all("\\/OneDrive")
+
+bill_files = map(bill_folders, list.files, full.names = T) %>% 
+  set_names(bill_types)
+
+
+all_files = flatten_chr(bill_files)
+(xml_file = all_files[3])
+```
+
+```{r}
+(bill_xml = xml_child(read_xml(xml_file), "bill"))
+```
+
+```{r}
+(xpaths = xml_children(bill_xml) %>% 
+      map_chr(xml_path))
+```
+
+```{r}
+(bill_nodesets = map(xpaths, ~ xml_find_all(bill_xml, xpath = .x)) %>% 
+    set_names(map_chr(., xml_name)))
+```
+
+# Amendments
+
+First have a look at the [amendments XML descriptions](https://github.com/usgpo/bill-status/blob/main/BILLSTATUS-XML_User_User-Guide.md#2-xml-descriptions) in the GPO BILLSTATUS User Guide.
+
+```{r}
+amendments_node = bill_nodesets[["amendments"]]
+
+(bill_amendments = xml_find_all(amendments_node, "amendment"))
+```
+
+Convert amendments XML to list
+
+```{r}
+(amendments_list = as_list(bill_amendments)) %>% 
+  str()
+```
+
+To parse an amendment, I want to parse the actions into a table, parse the amended bill and latestAction elements into tibbles, and then flatten the remaining singular elements into columns
+
+```{r}
+amendments_list[[1]] %>% 
+  modify_at("amendedBill", ~flatten_rename(.x, "amendedBill"))
+```
+
+```{r}
+pluck(amendments_list[[1]], "actions") %>% 
+  modify_at("actions", map_dfr, parse_action) %>% 
+  modify_at("actionTypeCounts", flatten_dfc) %>% 
+  modify_at("actionByCounts", flatten_dfc)
+  
+```
+
+```{r}
+amendments_list[[1]] %>% 
+  modify_at("amendedBill", ~flatten_rename(.x, "amendedBill"))
+```
+
+```{r}
+parse_amendment = function(amendment){
+  
+  amendment_actions = map_dfr(pluck(amendment[["actions"]], "actions"), parse_action)
+  amendment %>% 
+    modify_at("amendedBill", ~flatten_rename(.x, "amendedBill"))
+  amendment %>% 
+    map_at("actions", function(actions){
+      actions %>% 
+        modify_at("actions", map_dfr, parse_action) %>% 
+        modify_at("actionTypeCounts", flatten_dfc) %>% 
+        modify_at("actionByCounts", flatten_dfc)
+    }) %>% flatten_dfc()
+}
+```
+
+```{r}
+microbenchmark::microbenchmark(
+    piped_maps = map(amendment["actions"], "actions") %>% map_dfr(map_dfr, parse_action),
+    mapped_maps = map_dfr(modify_at(amendment["actions"], "actions", modify_at, "actions", map_dfr, parse_action), "actions"),
+    single_pluck = map_dfr(pluck(amendment[["actions"]], "actions"), parse_action),
+    double_pluck = map_dfr(pluck(pluck(amendment,"actions"), "actions"), parse_action),
+    double_index = map_dfr(amendment[["actions"]][["actions"]], parse_action)
+)
+```

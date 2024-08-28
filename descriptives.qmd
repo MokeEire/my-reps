@@ -1,0 +1,169 @@
+---
+title: "Congressional data descriptive statistics"
+date: "`r Sys.Date()`"
+bibliography: references.bib
+format: 
+  html:
+    theme: litera
+    toc: true
+    code-fold: true
+    code-tools: true
+    fig-format: retina
+    fig-dpi: 320
+editor: visual
+---
+
+```{r}
+#| label: setup
+#| include: false
+library(extrafont)
+library(tictoc)
+library(furrr)
+library(here)
+library(reactable)
+library(reactablefmtr)
+plan(multisession)
+source("R/parsing_functions.R")
+
+
+# Load cleaned R objects
+all_bills = readRDS(here("data", "cleaned", "BILLSTATUS_117.Rds"))
+```
+
+```{r}
+#| label: glimpse-data
+#| eval: false
+glimpse(all_bills)
+
+```
+
+Policy Areas
+
+Legislative Subjects
+
+Sponsors
+
+Cosponsors
+
+Committees
+
+Actions
+
+Votes
+
+| Bill Type             | Initials       | Description                                                                                                                   |
+|------------------|--------------------|------------------------------------|
+| Bill                  | H.R. / S.      | Most common form of legislation                                                                                               |
+| Simple resolution     | H./S. Res.     | A matter concerning the operation of either the House of Representatives or Senate alone.                                     |
+| Joint resolution      | H./S. J.Res.   | Functionally identical to a bill, except that *only joint resolutions may be used to propose amendments* to the constitution. |
+| Concurrent resolution | H./S. Con.Res. | Matters affecting the operations of both the House of Representatives and Senate.                                             |
+
+: Types of legislation in congress [@congress.gov_2022]
+
+```{r}
+# Count bills by type
+count(all_bills, origin_chamber, 
+      type = str_sub(str_replace(bill_type, "^S$", "SR"), start = 2), 
+      bill_type, 
+      wt = n_distinct(bill_id), name = "bills") %>% 
+  # Count and sort by general type
+  add_count(type, wt = bills) %>% 
+  arrange(n) %>% 
+  mutate(bill_type = fct_inorder(bill_type, ordered = T),
+         chamber = factor(origin_chamber)) %>% 
+  # Plot 
+  ggplot(., aes(x = bills, y = bill_type))+
+  geom_col(aes(fill = chamber), show.legend = F)+
+  geom_text(aes(x = bills+100, label = scales::comma(bills)),
+            hjust = 0)+
+  # Scales
+  scale_fill_manual(values = viz_colours[1:2])+
+  scale_x_continuous(breaks = scales::breaks_pretty(3), 
+                     labels = scales::comma,
+                     expand = expansion(mult = c(0,.1)))+
+  # Labels
+  labs(y = NULL, x = "# bills",
+       title = "Congressional bills introduced in the House and Senate",
+       subtitle = "By type of legislation")+
+  facet_wrap(~origin_chamber, ncol = 1, scales = "free_y", strip.position = "left")+
+  # Theme
+  theme_moke(plots_pane = T)+
+  theme(axis.line.y = element_blank(),
+        panel.grid.major.x = element_line(),
+        panel.grid.major.y = element_blank())
+```
+
+# Date Variables
+
+There are a number of dates for each bill:
+
+```{r}
+date_vars = all_bills %>% 
+  select(origin_chamber, ends_with("_date"))
+
+date_hist = function(df, var, fill_col = viz_colours[1], ...){
+  date_summary = summarise(df, 
+            min = min({{var}}), 
+            max = max({{var}}),
+            days = time_length(lubridate::interval(min, max), "day"))
+  
+  ggplot(df, aes(x = {{var}}))+
+    geom_histogram(
+      # fill = fill_col,
+      aes(fill = origin_chamber), position = position_identity(),
+      alpha = .8,
+      # bins = floor(date_summary$days),
+      binwidth = 60*60*24*5
+      )+
+    scale_x_datetime(expand = expansion(mult = .025))+
+    scale_y_continuous(name = "# bills", 
+                       breaks = scales::breaks_pretty(),
+                       labels = scales::comma,
+                       expand = expansion(mult = c(0,.1)))+
+    scale_fill_manual(name = NULL, values = viz_colours[1:2])+
+  labs(title = janitor::make_clean_names(deparse(substitute(var)), 
+                                         case = "sentence"),
+       x = NULL)+
+    theme_moke(...)+
+    theme(legend.position="bottom")
+}
+
+```
+
+::: panel-tabset
+## Created
+
+```{r}
+date_hist(date_vars, create_date, plots_pane = T)
+
+```
+
+## Introduced
+
+```{r}
+date_hist(date_vars, introduced_date, fill_col = viz_colours[2], plots_pane = T)
+
+```
+
+## Updated
+
+```{r}
+date_hist(date_vars, update_date, fill_col = viz_colours[3], plots_pane = T)
+
+```
+
+## Latest Action
+
+```{r}
+date_hist(date_vars, latest_action_action_date, fill_col = viz_colours[4], plots_pane = T)
+```
+:::
+
+```{r}
+#| include: false
+
+# Count bills by date (rounded)
+all_bills %>% 
+  count(date = round_date(create_date, unit = "day"), 
+        wt = n_distinct(bill_id),   sort = T)
+```

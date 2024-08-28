@@ -1,0 +1,114 @@
+---
+title: "Cleaning Committees Data"
+date: "`r Sys.Date()`"
+execute: 
+  warning: false
+  message: false
+format: 
+  html:
+    theme: litera
+    toc: true
+    code-fold: true
+    code-tools: true
+editor: source
+---
+
+```{r}
+#| label: setup
+#| include: false
+library(extrafont)
+library(tictoc)
+library(furrr)
+library(here)
+library(reactable)
+library(reactablefmtr)
+plan(multisession)
+source("R/parsing_functions.R")
+
+# Load cleaned R objects
+# Check for latest version of clean data
+clean_data = fs::dir_info(here("data", "cleaned"))
+latest_file = clean_data[which.max(clean_data$change_time), "path", drop = T]
+
+all_bills = readRDS(latest_file)
+# actions = readRDS(here("data", "cleaned", "BILLSTATUS_117_Actions.Rds"))
+
+# Action code mapping table from GovInfo
+# https://github.com/usgpo/bill-status/blob/main/BILLSTATUS-XML_User_User-Guide.md#3-action-code-element-possible-values
+action_codes = read_csv(here("data", "action_codes.csv"), col_types = "cc")
+```
+
+Using the `collect_data.R` script, I parsed govinfo's house and senate bill data from the current (117th) congress. This document unpacks and cleans the actions data. The cleaning process does the following:
+
+-   Ensures fields have consistent data types
+
+-   Deduplicates actions in cases where multiple source systems record the same action
+
+-   Uses action text and codes (where available) to produce a more comprehensive set of categories for each legislative step
+
+# Data overview
+
+First, let's have a look at the data. `unnest()` committees from the bill data to see committee-level information.
+
+```{r}
+# Select non-list columns and then select action-related columns
+# (this includes the actions list column)
+(committees_unnested = select(all_bills, 
+                           bill_id, title, type, committees) %>% 
+   # Categorize type of legislation
+  mutate(#actions = map(actions, mutate, source_system_code = as.character(source_system_code)),
+         type_cat = case_when(type %in% c("HR", "S") ~ "Bill",
+                                   type %in% c("HJRES", "SJRES") ~ "Joint Resolution",
+                                   type %in% c("HRES", "SRES") ~ "Simple Resolution",
+                                   type %in% c("HCONRES", "SCONRES") ~ "Concurrent Resolution")) %>% 
+    # Unnest committees
+  unnest(committees, names_sep = "_")) %>% 
+  # After assignment: Subset the data
+  head(20)
+
+```
+
+```{r}
+glimpse(committees_unnested)
+```
+
+```{r}
+skimr::skim(committees_unnested)
+```
+
+What are the different committee types?
+
+```{r}
+committees_unnested %>% 
+  distinct(committees_chamber, committees_type)
+```
+
+How much are each of these committees present in the data? 
+Measure by number of rows and number of distinct bills they appear on.
+
+```{r}
+committees_unnested %>% 
+  group_by(committees_chamber, committees_type) %>% 
+  summarise(
+    nrows = n(),
+    bills = n_distinct(bill_id),
+    .groups = "drop"
+  )
+```
+
+
+
+```{r}
+unnest(committees_unnested, committees_activities, names_sep = "_") %>% 
+  # Count committee activities by committee
+  group_by(committees_system_code, committees_chamber, committees_name, committees_activities_name) %>% 
+  summarise(n = n(),
+            bills = n_distinct(bill_id),
+            .groups = "drop") %>% 
+  # Pivot committee actions to columns
+  pivot_wider(id_cols = c(committees_system_code, committees_chamber, committees_name), 
+              names_from = committees_activities_name, 
+              values_from = bills, values_fill = 0) %>% 
+  janitor::clean_names() -> 
+```
+

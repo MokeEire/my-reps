@@ -77,6 +77,22 @@ toc()
 
 skimr::skim(all_bills)
 # Note: length on list variables counts tibble columns
+# Compare single bill to the XML
+test_bill = sample_n(all_bills, 1)
+test_file = str_subset(all_files, str_c(tolower(str_remove_all(test_bill$bill_id, "\\-")), "\\."))
+test_xml = read_xml(test_file) %>% xml_child("bill")
+
+test_xml
+# Actions
+View(unnest(test_bill$actions[[1]], committees, names_sep = "_"), "Test Actions")
+test_xml_actions = xml_find_all(test_xml, "./actions/item")
+test_xml_actions %>% map(xml_children)
+
+# Committees
+View(unnest(unnest(unnest(test_bill$committees[[1]], activities, names_sep = "_"), subcommittees, names_sep = "_"), subcommittees_activities, names_sep = "_"), "Test Committees")
+test_xml_committees = xml_find_all(test_xml, "./committees/item")
+test_xml_committees %>% map(xml_children)
+
 
 # Save objects ------------------------------------------------------------
 

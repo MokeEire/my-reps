@@ -1,0 +1,301 @@
+---
+title: "What are my reps doing?"
+date: "`r Sys.Date()`"
+format: 
+  html:
+    theme: litera
+    toc: true
+    code-fold: true
+    code-tools: true
+editor: visual
+---
+
+```{r}
+#| label: setup
+#| include: false
+library(extrafont)
+library(tictoc)
+library(furrr)
+library(here)
+library(reactable)
+library(reactablefmtr)
+plan(multisession)
+source("R/parsing_functions.R")
+
+# action_codes = read_csv(here("data", "action_codes.csv"), col_types = "cc")
+
+# Load cleaned R objects
+all_bills = readRDS(here("data", "cleaned", "BILLSTATUS_117.Rds"))
+# actions = readRDS(here("data", "cleaned", "BILLSTATUS_117_Actions.Rds"))
+```
+
+# Intro
+
+Have you ever felt uninformed while voting? I know I have, and it feels frustrating to try to make a decision when I don't know the pros and cons of different options. One aspect of this ambiguity when voting for congressional representatives is that I don't know what they are actually doing. They typically have persuasive rhetoric which describes their platform but how does that translate to their actions?
+
+Well here's a dataset of congressional bills that will help decipher what politicians actually do. There are a number of different ways our representatives can actually *do* anything:
+
+-   Sponsor (or cosponsor) legislation
+
+-   Attend committee hearings
+
+-   Debate on the floor
+
+-   Vote on bills
+
+```{r}
+#| label: glimpse-data
+#| eval: false
+glimpse(all_bills, width = 80)
+
+```
+
+# Sponsorship
+
+Let's first find my representatives:
+
+```{r}
+my_sponsors = all_bills %>% 
+  select(bill_id, origin_chamber, title, sponsors, policy_areas, 
+         legislative_subjects) %>% 
+  unnest(sponsors, keep_empty = T) %>% 
+  # Select CA-43 sponsors 
+  filter(sponsor_state == "CA", 
+         # This keeps NAs because Senators don't have districts
+         replace_na(sponsor_district == "43", T))
+
+(my_sponsors_ids = my_sponsors %>% 
+  distinct(sponsor_bioguide_id, 
+           sponsor_full_name, 
+           # sponsor_first_name, sponsor_middle_name, sponsor_last_name,
+           sponsor_party, sponsor_state,
+           sponsor_identifiers_lis_id, sponsor_identifiers_bioguide_id,
+           sponsor_identifiers_gpo_id,
+           sponsor_district))
+```
+
+How many bills have they sponsored?
+
+```{r}
+my_sponsors %>% 
+  # How many bills have they sponsored?
+  group_by(sponsor_full_name, origin_chamber) %>% 
+  summarise(
+    bills_sponsored = n_distinct(bill_id),
+    .groups = "drop"
+  )
+```
+
+What policy areas have they been sponsoring bills for?
+
+```{r}
+#| label: bills-by-leg-fig
+#| fig-width: 10
+#| fig-height: 8
+
+(my_sponsors_policies = my_sponsors %>% 
+    # Count bills sponsored by policy area
+  unnest(policy_areas, keep_empty = T) %>% 
+  add_count(policy_areas, wt = n_distinct(bill_id), name = "policy_count") %>% 
+  count(sponsor_full_name, policy_areas, policy_count, 
+        wt = n_distinct(bill_id),
+        name = "bills_sponsored")) %>% 
+  arrange(policy_count) %>% 
+  # Factor policy areas to sort by bills sponsored
+  mutate(policy_areas = fct_inorder(fct_explicit_na(policy_areas))) %>% 
+  # Plot
+  ggplot(., aes(x = bills_sponsored, y = policy_areas, fill = sponsor_full_name))+
+  geom_col()+
+  # Scales
+  scale_fill_manual(values = viz_colours[1:3])+
+  scale_x_continuous(expand = expansion(),
+                     breaks = scales::breaks_pretty())+
+  # Labels
+  labs(y = NULL, x = "Bills Sponsored", fill = NULL,
+       title = "Policy focus of your representatives",
+       subtitle = "Bills sponsored, by policy area and legislator")+
+  # Theme
+  theme_moke(plots_pane = T)+
+  theme(legend.position = "bottom", legend.justification = "center",
+        panel.grid.major.x = element_line(),
+        panel.grid.major.y = element_blank())
+  
+```
+
+```{r}
+#| eval: false
+my_sponsors_policies %>% 
+  pivot_wider(id_cols = c(policy_areas, policy_count), 
+              names_from = sponsor_full_name,
+              values_from = bills_sponsored, values_fill = 0) %>% 
+  arrange(desc(policy_count))
+```
+
+```{r}
+#| fig-height: 8
+#| fig-width: 10
+(my_sponsors_subjects = my_sponsors %>% 
+    # Count bills sponsored by policy area
+  unnest(legislative_subjects) %>% 
+  add_count(legislative_subjects, wt = n_distinct(bill_id), 
+            name = "subject_count") %>% 
+  count(sponsor_full_name, legislative_subjects, subject_count, 
+        wt = n_distinct(bill_id),
+        name = "bills_sponsored")) %>% 
+  arrange(desc(subject_count), legislative_subjects) %>% 
+  filter(dense_rank(desc(subject_count)) < 10) %>% 
+  arrange(subject_count) %>% 
+  # Factor policy areas to sort by bills sponsored
+  mutate(legislative_subjects = fct_inorder(fct_explicit_na(legislative_subjects))) %>% 
+  # Plot
+  ggplot(., aes(x = bills_sponsored, y = legislative_subjects, 
+                fill = sponsor_full_name))+
+  geom_col()+
+  # Scales
+  scale_fill_manual(values = viz_colours[1:3])+
+  scale_x_continuous(expand = expansion(),
+                     breaks = scales::breaks_pretty())+
+  # Labels
+  labs(y = NULL, x = "Bills Sponsored", fill = NULL,
+       title = "Legislative subject focus of your representatives",
+       subtitle = "Bills sponsored, by legislative subject and legislator")+
+  # Theme
+  theme_moke(plots_pane = T)+
+  theme(legend.position = "bottom",
+        panel.grid.major.x = element_line(),
+        panel.grid.major.y = element_blank())
+```
+
+# Cosponsorship
+
+```{r}
+(cosponsors_unnested = all_bills %>% 
+  select(bill_id, origin_chamber, title, cosponsors, policy_areas, legislative_subjects) %>% 
+  unnest(cosponsors, keep_empty = T)) %>% 
+  glimpse(width = 80)
+```
+
+```{r}
+(my_cosponsors = cosponsors_unnested %>% 
+  # Select CA-43 sponsors 
+  filter(cosponsor_state == "CA", 
+         # This keeps NAs because Senators don't have districts
+         replace_na(cosponsor_district == "43", T))) %>% 
+  # How many bills have they sponsored?
+  group_by(origin_chamber, cosponsor_full_name) %>% 
+  summarise(
+    bills_cosponsored = n_distinct(bill_id),
+    .groups = "drop"
+  )
+```
+
+What policy areas have they been cosponsoring bills for?
+
+```{r}
+#| fig-height: 8
+#| fig-width: 10
+(my_cosponsors_policies = my_cosponsors %>% 
+    # Count bills sponsored by policy area
+  unnest(policy_areas, keep_empty = T) %>% 
+  add_count(policy_areas, wt = n_distinct(bill_id), name = "policy_count") %>% 
+  count(cosponsor_full_name, policy_areas, policy_count, 
+        wt = n_distinct(bill_id),
+        name = "bills_cosponsored")) %>% 
+  arrange(policy_count) %>% 
+  # Factor policy areas to sort by bills sponsored
+  mutate(policy_areas = fct_inorder(fct_explicit_na(policy_areas))) %>% 
+  # Plot
+  ggplot(., aes(x = bills_cosponsored, y = policy_areas, fill = cosponsor_full_name))+
+  geom_col()+
+  # Scales
+  scale_fill_manual(values = viz_colours[1:3])+
+  scale_x_continuous(expand = expansion(),
+                     breaks = scales::breaks_pretty())+
+  # Labels
+  labs(y = NULL, x = "Bills co-sponsored", fill = NULL,
+       title = "Policy focus of your representatives",
+       subtitle = "Bills co-sponsored, by policy area and legislator")+
+  # Theme
+  theme_moke(plots_pane = T)+
+  theme(legend.position = "bottom",
+        panel.grid.major.x = element_line(),
+        panel.grid.major.y = element_blank())
+```
+
+# Votes
+
+```{r}
+(votes_unnested = all_bills %>% 
+  select(bill_id, origin_chamber, title, 
+         votes, policy_areas, legislative_subjects) %>% 
+  unnest(votes, keep_empty = T, )) %>% 
+  glimpse(width = 80)
+```
+```{r}
+votes_unnested %>% 
+  # filter(map_lgl(vote_roll, is_tibble))
+  mutate(votes = flatten_dbl(map_if(vote_roll, is_tibble, nrow, .else = ~0))) %>% 
+  count(chamber, votes)
+```
+
+
+```{r}
+my_reps_votes = votes_unnested %>% 
+  unnest(vote_roll) %>% 
+  unnest(legislator_votes) %>% count(chamber)
+  inner_join(my_sponsors_ids, by = c("name_id" = "sponsor_bioguide_id"))
+
+
+```
+
+## House
+
+`r unique(my_reps_votes[my_reps_votes$origin_chamber == "House", "sponsor_full_name"])`
+
+```{r}
+#| label: house-votes-rt
+#| column: page
+my_reps_votes %>% 
+  filter(origin_chamber == "House") %>% 
+  unnest(policy_areas, keep_empty = T) %>% 
+  select(bill_id, title, policy_areas, date, vote, 
+         vote_question, full_action_name, vote_result) %>% 
+  arrange(desc(date)) %>% 
+  reactable(theme = moke_rt(), 
+            resizable = T, filterable = T, sortable = T, 
+            defaultSorted = list("date" = "desc"), groupBy = "policy_areas",
+            columns = list(
+              bill_id = colDef(width = 88),
+              title = colDef(minWidth = 200),
+              date = colDef(width = 128, format = colFormat(date = T)),
+              vote = colDef(width = 64),
+              vote_result = colDef(width = 104)
+            ))
+```
+
+## Senate
+
+`r unique(my_reps_votes[my_reps_votes$origin_chamber == "Senate", "sponsor_full_name"])[1]`
+
+```{r}
+#| label: house-votes-rt
+#| column: page
+my_reps_votes %>% 
+  filter(origin_chamber == "Senate") %>% 
+  unnest(policy_areas, keep_empty = T) %>% count(name_id)
+  # Include sort field as name, this won't work if a state has two senators with the same last name
+  select(bill_id, title, policy_areas, date, vote, sort_field,
+         vote_question, full_action_name, vote_result) %>% 
+  pivot_wider(names_from = sort_field, values_from = vote)
+  arrange(desc(date)) %>% 
+  reactable(theme = moke_rt(), 
+            resizable = T, filterable = T, sortable = T, 
+            defaultSorted = list("date" = "desc"), groupBy = "policy_areas",
+            columns = list(
+              bill_id = colDef(width = 88),
+              title = colDef(minWidth = 200),
+              date = colDef(width = 128, format = colFormat(date = T)),
+              vote = colDef(width = 64),
+              vote_result = colDef(width = 104)
+            ))
+```
