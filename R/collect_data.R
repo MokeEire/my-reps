@@ -1,9 +1,9 @@
-library(extrafont)
+# library(extrafont)
 library(tictoc)
 library(furrr)
 library(here)
-library(reactable)
-plan(multisession)
+# library(reactable)
+plan(multisession, workers = 6)
 source("R/parsing_functions.R")
 
 # List files ----
@@ -13,9 +13,9 @@ source("R/parsing_functions.R")
 # https://github.com/unitedstates/congress-legislators/commit/5e4d9a0656458646e96c2b378fba640c0e22f8b1?diff=split
 # Also here:
 # https://clerk.house.gov/xml/lists/MemberData.xml
-bill_types = list.files(here("data", "BILLSTATUS","117"))
+bill_types = list.files(here("data", "BILLSTATUS","118"), pattern = "^[a-z]+$")
 
-bill_folders = here("data", "BILLSTATUS", "117", bill_types) |> 
+bill_folders = here("data", "BILLSTATUS", "118", bill_types) |> 
     str_remove_all("\\/OneDrive")
 
 bill_files = map(bill_folders, list.files, full.names = T) |> 
@@ -54,7 +54,7 @@ all_files = flatten_chr(bill_files)
 sample_files = sample(all_files, 500)
 
 tic()
-sample_df = future_map(sample_files, extract_bill_status, 
+sample_df = map(bill_files$hr, extract_bill_status, 
                        log_types = "console", .progress=T) |> 
   list_rbind()
 toc()
